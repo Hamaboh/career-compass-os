@@ -8,6 +8,12 @@ COPY packages/shared/package.json packages/shared/package.json
 RUN npm install
 COPY packages/shared packages/shared
 COPY apps/api apps/api
+# @prisma/clientの型はスキーマファイルから生成される。npm install実行時点ではまだ
+# apps/api/prisma/schema.prisma がビルドコンテキストに存在しない(レイヤーキャッシュ効率化のため
+# package.jsonだけ先にCOPYしている)ため、npm installのpostinstallで生成される型は空になる
+# （2026-08-14, Docker上のnest buildが「Property 'email' does not exist on type '{}'」等
+# 56件のエラーで失敗して発覚）。スキーマ本体をCOPYし終えた後に明示的に再生成する。
+RUN npm run prisma:generate --workspace=apps/api
 RUN npm run build --workspace=apps/api
 RUN npm run build --workspace=packages/shared --if-present
 

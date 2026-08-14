@@ -1,14 +1,21 @@
 // 羅針盤キャリアOS ― Prismaスキーマ
 //
-// Step -1時点ではdatasource/generatorのみ。
-// Phase3 4〜6章で確定した62テーブルのモデル定義は、Step 0（認証基盤: employees/invitations/
-// otp_codes/sessions/account_locks/audit_logs）から着手し、後続Stepで対応ドメインごとに追加する。
-// テーブル名・カラム名・制約は必ずPhase3 5章の定義に一致させること（docs/DESIGN_FREEZE.md ルール4）。
+// Step 0（認証基盤）: Phase3 5.A節「アイデンティティ・認証・監査ドメイン」の
+// employees/units/invitations/otp_codes/sessions/password_reset_tokens/
+// login_attempts/account_locks/audit_logs を実装する。
+// 後続Step（目標階層・自己理解・SMART・制度接続・1on1等）のテーブルは、
+// 該当ドメインの実装に着手するタイミングで追加する。
+//
+// 命名規約: Prismaモデル/フィールドはcamelCase、DBカラム/テーブルはPhase3 4.4節どおり
+// snake_caseとし、@map/@@mapで対応させる。
 //
 // Phase3 14.3節: このスキーマが管理する接続ロールは app_backend。
-// app_ai_service ロールへのGRANT設定はマイグレーションSQLとして別途追加し、
-// Prismaの通常のmigrate flowとは別枠で管理する（AI Orchestration Serviceの書き込み権限を
-// 意図せず広げないため）。
+// app_ai_service ロールへのGRANT設定は、AI機能に着手するStep以降に別枠のマイグレーションとして追加する
+// （Step 0時点ではAI機能自体が存在しないため、未使用のロールを先んじて作らない）。
+//
+// Phase3 17章 Unit単位アクセス制御（RLS）: employeesテーブルに対するRLSポリシーは
+// migrations/<timestamp>_enable_rls_employees/migration.sql で別途定義する
+// （Prismaのスキーマ言語はCREATE POLICYを表現できないため、手書きSQLマイグレーションで補う）。
 
 generator client {
   provider = "prisma-client-js"
@@ -19,4 +26,227 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- モデル定義はここから（Step 0〜） ---
+// --- 列挙型 ---
+
+/// Phase3 7章。packages/shared/src/rbac.ts の EmployeeRole と値を一致させる。
+enum EmployeeRole {
+  ADMIN
+  UL
+  MEMBER
+  EXCLUDED
+
+  @@map("employee_role")
+}
+
+/// Phase3 8.1節 アカウントライフサイクル
+enum AccountStatus {
+  pending
+  active
+  locked
+  suspended
+  deactivated
+
+  @@map("account_status")
+}
+
+/// Phase3 9章 招待フロー（employees.invitation_status）
+enum InvitationStatus {
+  not_invited
+  invited
+  opened
+  otp_verified
+  activated
+
+  @@map("invitation_status")
+}
+
+/// Phase3 9章 招待フロー（invitations.status、1 employeeに複数履歴を許す独立レコード）
+enum InvitationRecordStatus {
+  pending
+  opened
+  otp_verified
+  activated
+  expired
+  revoked
+
+  @@map("invitation_record_status")
+}
+
+/// Phase3 10章 OTPフロー
+enum OtpStatus {
+  active
+  verified
+  expired
+  exhausted
+
+  @@map("otp_status")
+}
+
+/// Phase3 14.2節 / 16章。人間の操作かシステム(AI/バッチ)の操作かを監査ログで区別する。
+enum ActorType {
+  human
+  system
+
+  @@map("actor_type")
+}
+
+// --- モデル ---
+
+model Unit {
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String
+  primaryUlEmployeeId String?  @map("primary_ul_employee_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  /// Phase3 7.2節: units.primary_ul_employee_id と employees.role='UL' は独立した概念。
+  primaryUl Employee?  @relation("UnitPrimaryUl", fields: [primaryUlEmployeeId], references: [id])
+  employees Employee[] @relation("EmployeeUnit")
+
+  @@map("units")
+}
+
+model Employee {
+  id                String           @id @default(uuid()) @db.Uuid
+  email             String           @unique
+  name              String
+  role              EmployeeRole     @default(EXCLUDED)
+  unitId            String?          @map("unit_id") @db.Uuid
+  accountStatus     AccountStatus    @default(pending) @map("account_status")
+  invitationStatus  InvitationStatus @default(not_invited) @map("invitation_status")
+  /// 招待完了までnull。平文パスワードは一切保持しない（Argon2idハッシュのみ）。
+  passwordHash      String?          @map("password_hash")
+  passwordUpdatedAt DateTime?        @map("password_updated_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  unit              Unit?                @relation("EmployeeUnit", fields: [unitId], references: [id])
+  primaryUlForUnits Unit[]               @relation("UnitPrimaryUl")
+  invitations       Invitation[]
+  sessions          Session[]
+  passwordResetTokens PasswordResetToken[]
+  loginAttempts     LoginAttempt[]
+  accountLocks      AccountLock[]
+  auditLogsAsActor  AuditLog[]           @relation("AuditLogActor")
+
+  @@index([unitId])
+  @@index([role])
+  @@map("employees")
+}
+
+model Invitation {
+  id         String                  @id @default(uuid()) @db.Uuid
+  employeeId String                  @map("employee_id") @db.Uuid
+  tokenHash  String                  @unique @map("token_hash")
+  status     InvitationRecordStatus  @default(pending)
+  expiresAt  DateTime                @map("expires_at")
+  createdAt  DateTime                @default(now()) @map("created_at")
+  revokedAt  DateTime?               @map("revoked_at")
+
+  employee Employee   @relation(fields: [employeeId], references: [id])
+  otpCodes OtpCode[]
+
+  @@index([employeeId])
+  @@map("invitations")
+}
+
+model OtpCode {
+  id           String    @id @default(uuid()) @db.Uuid
+  invitationId String    @map("invitation_id") @db.Uuid
+  codeHash     String    @map("code_hash")
+  status       OtpStatus @default(active)
+  expiresAt    DateTime  @map("expires_at")
+  maxAttempts  Int       @default(5) @map("max_attempts")
+  attemptCount Int       @default(0) @map("attempt_count")
+  verifiedAt   DateTime? @map("verified_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  invitation Invitation @relation(fields: [invitationId], references: [id])
+
+  @@index([invitationId])
+  @@map("otp_codes")
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  /// Redisが正、本テーブルは監査用の補助台帳（Phase3 16.1節）。生トークンは保持しない。
+  tokenHash  String    @unique @map("token_hash")
+  issuedAt   DateTime  @default(now()) @map("issued_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("password_reset_tokens")
+}
+
+model LoginAttempt {
+  id            String   @id @default(uuid()) @db.Uuid
+  employeeId    String?  @map("employee_id") @db.Uuid
+  email         String
+  success       Boolean
+  failureReason String?  @map("failure_reason")
+  ipAddress     String?  @map("ip_address")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
+model AccountLock {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  reason     String
+  lockedAt   DateTime  @default(now()) @map("locked_at")
+  unlockAt   DateTime  @map("unlock_at")
+  unlockedAt DateTime? @map("unlocked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("account_locks")
+}
+
+model AuditLog {
+  id              String    @id @default(uuid()) @db.Uuid
+  actorEmployeeId String?   @map("actor_employee_id") @db.Uuid
+  actorType       ActorType @default(human) @map("actor_type")
+  /// 例: "auth.login", "employee.create", "invitation.create"（Phase3 15章）
+  action          String
+  targetType      String?   @map("target_type")
+  targetId        String?   @map("target_id")
+  /// パスワード・OTP・セッショントークン等の機微値は本テーブルに一切書き込まない（15.2節）。
+  before          Json?
+  after           Json?
+  ipAddress       String?   @map("ip_address")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  actor Employee? @relation("AuditLogActor", fields: [actorEmployeeId], references: [id])
+
+  @@index([actorEmployeeId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

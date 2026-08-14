@@ -45,7 +45,7 @@ npm install
 docker compose up -d
 
 # 4. 動作確認
-curl -k https://localhost/api/v1/healthz   # NestJS ヘルスチェック
+curl -k https://localhost/api/healthz      # NestJS ヘルスチェック（healthzはAPIバージョニング対象外、v1配下ではない）
 open https://localhost                      # Next.js トップページ
 ```
 
