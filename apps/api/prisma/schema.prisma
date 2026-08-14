@@ -1,0 +1,22 @@
+// 羅針盤キャリアOS ― Prismaスキーマ
+//
+// Step -1時点ではdatasource/generatorのみ。
+// Phase3 4〜6章で確定した62テーブルのモデル定義は、Step 0（認証基盤: employees/invitations/
+// otp_codes/sessions/account_locks/audit_logs）から着手し、後続Stepで対応ドメインごとに追加する。
+// テーブル名・カラム名・制約は必ずPhase3 5章の定義に一致させること（docs/DESIGN_FREEZE.md ルール4）。
+//
+// Phase3 14.3節: このスキーマが管理する接続ロールは app_backend。
+// app_ai_service ロールへのGRANT設定はマイグレーションSQLとして別途追加し、
+// Prismaの通常のmigrate flowとは別枠で管理する（AI Orchestration Serviceの書き込み権限を
+// 意図せず広げないため）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- モデル定義はここから（Step 0〜） ---

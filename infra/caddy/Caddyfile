@@ -1,0 +1,32 @@
+# 羅針盤キャリアOS ― リバースプロキシ設定（Phase3 1.2/1.3節）
+# 単一オリジンにまとめることでフロント/バック間のCORS設定を不要にする。
+# /api/* は NestJS へ、それ以外は Next.js へ。
+#
+# LAN内アクセス（既定）: localhost またはマシンのローカルIPで自動的にローカル内部CA証明書が発行される。
+# 外部公開する場合はこのブロックのアドレスを実際のドメイン名に置き換えると、
+# 自動的にLet's Encryptの証明書取得に切り替わる（Caddyの標準動作、追加設定不要）。
+
+localhost {
+	encode gzip
+
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; object-src 'none'; base-uri 'self'"
+	}
+
+	# Phase3 16.11節: リクエストボディサイズ上限（既定1MB。Evidence添付は別途上限を検討）
+	request_body {
+		max_size 1MB
+	}
+}

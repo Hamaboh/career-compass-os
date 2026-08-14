@@ -1,0 +1,39 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+.pnpm-debug.log*
+
+# Env / secrets — never commit real values (design_freeze rules: secrets are config, not design)
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Prisma
+apps/api/prisma/migrations/.generated/
+
+# Docker volumes mounted locally (if any bind-mounts are used during dev)
+.docker-data/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Logs
+*.log
+logs/
