@@ -19,6 +19,11 @@ build/
 out/
 *.tsbuildinfo
 
+# Next.jsが `next dev`/`next build` の度に自動再生成する型参照ファイル。
+# コミット対象に含めるとCI環境で生成タイミングがずれてlintの
+# triple-slash-reference規則に引っかかる(2026-08-16、GitHub Actions初回実行で発覚)。
+apps/web/next-env.d.ts
+
 # Prisma
 apps/api/prisma/migrations/.generated/
 

@@ -16,7 +16,15 @@ export default tseslint.config(
       // Phase3 16.5節: 生SQL/文字列結合によるSQLクエリ構築を機械的に禁止する足場。
       // Step 0以降、実際のPrismaリポジトリ層実装時にno-restricted-syntax等で具体化する。
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // varsIgnorePattern: レスポンスDTOをホワイトリスト方式で構築する際の
+      // `const { secretField: _secretField, ...rest } = obj` という分割代入パターン
+      // (16.10節)はargsIgnorePatternの対象外(引数ではなく変数)のため別途追加
+      // (2026-08-16、GitHub Actions初回実行でtoPublicEmployee/toPublicAnswerの
+      // 意図的な破棄変数が警告として検出され発覚)。
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
   {
