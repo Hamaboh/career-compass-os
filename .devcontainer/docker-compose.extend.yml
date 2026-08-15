@@ -1,0 +1,20 @@
+# GitHub Codespaces / VS Code Dev Containers 専用の追加定義。
+# ルートの docker-compose.yml（Phase3 1.2節の単一マシン構成そのもの）は変更しない
+# ── DESIGN_FREEZE.mdの「DB/API/permission-modelの変更は独断で行わない」の対象は
+# アプリのアーキテクチャそのものであり、開発環境ツールの追加はこれに当たらないと判断。
+# 既存compose(postgres/redis/minio/api/worker/web/caddy)に、エディタが接続する
+# 「workspace」コンテナを1つ追加するだけで、既存サービス定義には一切触れない。
+services:
+  workspace:
+    image: mcr.microsoft.com/devcontainers/base:noble
+    volumes:
+      - ..:/workspaces/career-compass-os:cached
+    command: sleep infinity
+    environment:
+      # api/webはDocker内部ネットワーク上で稼働するため、コンテナ名で到達する
+      - API_INTERNAL_HOST=api
+      - WEB_INTERNAL_HOST=web
+    depends_on:
+      - postgres
+      - redis
+      - minio

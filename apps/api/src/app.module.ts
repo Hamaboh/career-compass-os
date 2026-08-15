@@ -14,6 +14,17 @@ import { UnitsModule } from './modules/units/units.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { MailModule } from './modules/mail/mail.module';
+import { AiOrchestrationModule } from './modules/ai-orchestration/ai-orchestration.module';
+import { SelfAnalysisModule } from './modules/self-understanding/self-analysis/self-analysis.module';
+import { DreamModule } from './modules/self-understanding/dream/dream.module';
+import { WhyModule } from './modules/self-understanding/why/why.module';
+import { GoalsModule } from './modules/goals/goals.module';
+import { InstitutionalModule } from './modules/institutional/institutional.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
+import { GoalContinuityModule } from './modules/goal-continuity/goal-continuity.module';
+import { OneOnOneModule } from './modules/one-on-one/one-on-one.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AppSettingsModule } from './modules/app-settings/app-settings.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { CsrfGuard } from './common/guards/csrf.guard';
@@ -32,6 +43,20 @@ import { AuthContextMiddleware } from './common/middleware/auth-context.middlewa
     EmployeesModule,
     UnitsModule,
     InvitationsModule,
+    // 自己分析〜目標形成ドメイン（このStepで追加）
+    AiOrchestrationModule,
+    SelfAnalysisModule,
+    DreamModule,
+    WhyModule,
+    GoalsModule,
+    InstitutionalModule,
+    // 目標確定後の継続支援ドメイン（このStepで追加: SMART/行動/進捗/振り返り/1on1/リマインド）
+    RemindersModule,
+    GoalContinuityModule,
+    OneOnOneModule,
+    // MVP完成フェーズ（ADMIN/UL/MEMBER全機能+通知、Phase4 17章MVP機能一覧準拠）で追加
+    NotificationsModule,
+    AppSettingsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -9,6 +9,10 @@ import { hashPassword } from '../src/common/security/password-hash';
  * ADMIN/UL/MEMBERそれぞれの可視範囲が employees_admin_all / employees_ul_select_unit_scope /
  * employees_self_select ポリシーどおりになっていることを確認する。
  */
+// MVP完成フェーズでAppModuleのモジュール数が増え、フルブートストラップがJestデフォルトの
+// 30秒hookタイムアウトを超える場合があるため、他のe2eスペックと同じく緩める。
+jest.setTimeout(120000);
+
 describe('RBAC / Row Level Security (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;

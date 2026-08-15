@@ -109,4 +109,25 @@ export class SessionService {
       data: { revokedAt: new Date() },
     });
   }
+
+  /**
+   * Phase3 16.6節「本人によるパスワード変更 | 変更元セッション以外の全セッション」。
+   * 2026-08-15、MEM-16(プロフィール)のパスワード変更機能実装時に追加
+   * （revokeAllSessions()は「全て」失効させる用途専用で、変更元セッションを残す用途には
+   * 使えなかったため、新設した）。
+   */
+  async revokeAllSessionsExcept(employeeId: string, exceptTokenHash: string): Promise<void> {
+    const hashes = await this.redis.smembers(`user_sessions:${employeeId}`);
+    const targets = hashes.filter((h) => h !== exceptTokenHash);
+    if (targets.length > 0) {
+      const pipeline = this.redis.pipeline();
+      for (const h of targets) pipeline.del(`session:${h}`);
+      for (const h of targets) pipeline.srem(`user_sessions:${employeeId}`, h);
+      await pipeline.exec();
+    }
+    await this.prisma.session.updateMany({
+      where: { employeeId, revokedAt: null, tokenHash: { not: exceptTokenHash } },
+      data: { revokedAt: new Date() },
+    });
+  }
 }

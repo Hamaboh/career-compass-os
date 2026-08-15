@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Ip, Param, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'node:crypto';
 import { InvitationsService } from './invitations.service';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -72,6 +73,19 @@ export class InvitationsController {
 
     res.cookie(this.config.getOrThrow<string>('SESSION_COOKIE_NAME'), session.rawToken, {
       httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+      expires: session.expiresAt,
+    });
+
+    // Phase3 16.3節・Phase4 3.1節「設定完了→初回ダッシュボードへ自動遷移」。auth.controller.tsの
+    // login()と同様にCSRFトークンも同時発行する（2026-08-15、フロントエンド実装時に発見・修正:
+    // 旧実装はセッションCookieのみを発行しCSRF Cookieを発行していなかったため、初回パスワード設定
+    // 直後の最初の状態変更リクエストが軒並み403(CSRFトークン不一致)になる欠陥があった）。
+    const csrfToken = randomBytes(32).toString('base64url');
+    res.cookie(this.config.getOrThrow<string>('CSRF_COOKIE_NAME'), csrfToken, {
+      httpOnly: false,
       secure: true,
       sameSite: 'strict',
       path: '/',

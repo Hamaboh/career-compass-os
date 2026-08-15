@@ -6,28 +6,39 @@ SES企業向け、AI支援によるキャリア形成・目標管理・1on1支�
 
 ## 現在の状態
 
-このリポジトリは **Step -1（土台整備）** の段階。ディレクトリ構成・Docker Compose・環境変数テンプレート・Lint規約のみが揃っており、業務ロジック（DBスキーマ・認証・画面等）はまだ実装されていない。次はStep 0（認証基盤）に進む。
+Phase 1〜4設計に基づくMVP実装がひととおり完了。バックエンド（NestJS）は認証・RBAC・自己理解/目標階層/1on1/通知/制度マスタ等の主要モジュールを実装済み、フロントエンド（Next.js）は42画面すべてを実装済み。詳細な実装状況・残課題は完了報告およびDESIGN_FREEZE.mdを参照。
 
 ## ディレクトリ構成
 
 ```
 .
 ├── apps/
-│   ├── api/          NestJSバックエンド（Auth/RBAC Guard/Domain API/AI Orchestration Service）
-│   └── web/           Next.js フロントエンド（App Router）
+│   ├── api/    NestJSバックエンド（auth/employees/units/goals/goal-continuity/
+│   │            self-understanding/one-on-one/notifications/institutional/
+│   │            app-settings/invitations/reminders/ai-orchestration/audit/mail）
+│   └── web/     Next.js フロントエンド（App Router, 42画面：login/goals/checkpoints/
+│                reflections/one-on-ones/self-analysis/dreams/why/notifications/
+│                profile/ul/admin/invitations/password-reset 等）
 ├── packages/
-│   └── shared/         フロント/バック共通の型・定数（ステータス語彙・RBAC権限フラグ名など）
+│   └── shared/  フロント/バック共通の型・定数（ステータス語彙・RBAC権限フラグ名など）
 ├── infra/
-│   └── caddy/           リバースプロキシ設定
+│   └── caddy/    リバースプロキシ設定
 ├── docs/
 │   └── DESIGN_FREEZE.md 正式仕様への参照と実装ルール
+├── .devcontainer/ GitHub Codespaces / VS Code Dev Containers設定
 ├── docker-compose.yml
 └── .env.example
 ```
 
-## セットアップ（初回）
+## セットアップ
 
-前提: このマシンにはまだ **Node.js と Docker がインストールされていません**（調査済み）。まず以下を用意する。
+### オプションA: GitHub Codespaces（推奨・最速）
+
+このリポジトリを開いて「Code」→「Codespaces」→「Create codespace on main」を選ぶだけで、Node 22 + Docker Composeスタック（Postgres/Redis/MinIO/Caddy/API/Web/Worker）が自動的に立ち上がる（`.devcontainer/`参照）。ローカルマシンのディスク容量やDocker Desktopの状態に左右されないため、ローカル環境が逼迫している場合はこちらを優先する。
+
+### オプションB: ローカル環境
+
+前提:
 
 1. Node.js 22 LTS（`.nvmrc`参照。nvm等でのインストールを推奨）
 2. Docker Desktop（または互換のDocker/Compose環境）

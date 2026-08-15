@@ -22,7 +22,15 @@ localhost {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "same-origin"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; object-src 'none'; base-uri 'self'"
+		# 2026-08-14 MVP完成フェーズのセキュリティ監査で修正: 旧設定は script-src に
+		# 'unsafe-inline' 'unsafe-eval' blob: を含んでおり、Phase3 16.4節「インラインスクリプトを
+		# 許可しない」という明示要件と矛盾していた（要件と実装の矛盾、design freezeルール3）。
+		# 現在のapps/webはプレースホルダーページのみで、インラインスクリプト/evalへの依存はない
+		# （Next.jsの本番ビルドはハイドレーションスクリプトを外部<script src>として配信し、
+		# unsafe-evalはwebpackの開発モードでのみ必要になる)。Phase3の基本形どおりに戻す。
+		# 将来、実際のフロントエンド実装で特定のライブラリがeval等を必要とすると判明した場合は、
+		# その時点で理由を明示してCSPの例外を追加する（先回りで緩めない）。
+		Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'"
 	}
 
 	# Phase3 16.11節: リクエストボディサイズ上限（既定1MB。Evidence添付は別途上限を検討）

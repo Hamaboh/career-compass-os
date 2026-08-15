@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ConfirmPasswordResetDto, RequestPasswordResetDto } from './dto/password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentEmployee } from '../../common/decorators/current-employee.decorator';
 import type { RequestContext } from '../../common/context/request-context';
@@ -85,5 +86,20 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   confirmReset(@Body() dto: ConfirmPasswordResetDto, @Ip() ip: string) {
     return this.authService.confirmPasswordReset(dto.token, dto.password, dto.passwordConfirmation, ip);
+  }
+
+  /** MEM-16 プロフィール「パスワード変更」（ログイン中の本人操作。忘れた場合のリセットとは別経路）。 */
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(@Body() dto: ChangePasswordDto, @CurrentEmployee() ctx: RequestContext, @Req() req: Request, @Ip() ip: string) {
+    const tokenHash = (req as unknown as { sessionTokenHash?: string }).sessionTokenHash;
+    return this.authService.changePassword(
+      ctx.employeeId,
+      dto.currentPassword,
+      dto.newPassword,
+      dto.newPasswordConfirmation,
+      tokenHash ?? '',
+      ip,
+    );
   }
 }

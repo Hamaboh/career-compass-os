@@ -1,7 +1,9 @@
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
+import type Redis from 'ioredis';
 import { AppModule } from '../../src/app.module';
+import { REDIS_CLIENT } from '../../src/redis/redis.module';
 
 /**
  * DB/Redis接続先をdev用（career_compass / db0）からテスト専用（career_compass_test / db1）に
@@ -26,5 +28,17 @@ export async function bootstrapTestApp(
   app.setGlobalPrefix('v1', { exclude: ['healthz'] });
 
   await app.init();
+
+  // e2eテストは全てのspecファイルが同一プロセス・同一送信元IPからログインするため、
+  // login-ip等のRedisレート制限バケット（本番のブルートフォース対策として意図通り機能する
+  // ものであり、しきい値自体は変更しない）が複数specファイルを跨いで累積してしまう。
+  // 各specのbeforeAllでこのbootstrapTestApp()を呼ぶタイミングで毎回クリアし、
+  // spec間のテスト分離を保証する（アプリ側のレート制限ロジック・しきい値には一切手を入れない）。
+  const redis = moduleRef.get<Redis>(REDIS_CLIENT);
+  const rateLimitKeys = await redis.keys('ratelimit:*');
+  if (rateLimitKeys.length > 0) {
+    await redis.del(...rateLimitKeys);
+  }
+
   return app;
 }

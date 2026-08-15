@@ -70,12 +70,18 @@ export class AuthService {
         : false;
 
     if (!valid) {
+      // Phase3 5.A節 login_attempts定義の注記どおり、invalid_password/invalid_emailは
+      // レスポンスだけでなくログ(failureReason)でも区別せずinvalid_credentialsに統一する
+      // （2026-08-15 セキュリティ監査で、旧実装がnot_found/bad_passwordを別値で保存しており
+      // ログ閲覧者にアカウント存在を推測させ得る点がPhase3の明示要件と矛盾すると判明し修正）。
+      // account_not_activeのみ、Phase3が明示的に許容する別区分として残す（ロック中/未有効化の
+      // 運用監視に必要な情報であり、アカウント存在の推測とは無関係のため）。
       await this.prisma.loginAttempt.create({
         data: {
           employeeId: employee?.id,
           email,
           success: false,
-          failureReason: !employee ? 'not_found' : employee.accountStatus !== 'active' ? 'inactive' : 'bad_password',
+          failureReason: employee && employee.accountStatus !== 'active' ? 'account_not_active' : 'invalid_credentials',
           ipAddress,
         },
       });
@@ -212,5 +218,51 @@ export class AuthService {
     });
 
     return { message: 'パスワードを再設定しました。再度ログインしてください' };
+  }
+
+  /**
+   * MEM-16(プロフィール)「パスワード変更」。Phase3 12章のポリシーをリセット/招待時と同一に適用し、
+   * 16.6節どおり変更元セッション以外を全失効させる。2026-08-15、フロントエンド実装時に本機能が
+   * 未実装であること（忘れた場合のリセットのみ存在）に気づき追加した。
+   */
+  async changePassword(
+    employeeId: string,
+    currentPassword: string,
+    newPassword: string,
+    newPasswordConfirmation: string,
+    currentSessionTokenHash: string,
+    ipAddress: string | null,
+  ) {
+    const employee = await this.prisma.withSystemBypass((tx) => tx.employee.findUnique({ where: { id: employeeId } }));
+    if (!employee || !employee.passwordHash || !(await verifyPassword(employee.passwordHash, currentPassword))) {
+      throw new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: '現在のパスワードが正しくありません' } });
+    }
+    if (newPassword !== newPasswordConfirmation) {
+      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'パスワードが一致しません' } });
+    }
+    const policy = validatePasswordPolicy(newPassword);
+    if (!policy.valid) {
+      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: policy.errors.join(' / ') } });
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await this.prisma.withSystemBypass((tx) =>
+      tx.employee.update({ where: { id: employeeId }, data: { passwordHash, passwordUpdatedAt: new Date() } }),
+    );
+    await this.sessionService.revokeAllSessionsExcept(employeeId, currentSessionTokenHash);
+
+    await this.auditLog.record({
+      actorEmployeeId: employeeId,
+      actorType: 'human',
+      action: 'employee.password_change',
+      targetType: 'employee',
+      targetId: employeeId,
+      // Phase3 15.2節: パスワード変更イベント自体は記録するが値は含めない(before/afterは常にNULL)。
+      before: null,
+      after: null,
+      ipAddress,
+    });
+
+    return { message: 'パスワードを変更しました' };
   }
 }

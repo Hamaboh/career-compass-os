@@ -95,6 +95,7 @@ export class EmployeesService {
           name: dto.name,
           role: dto.role,
           unitId: dto.unitId,
+          positionId: dto.positionId,
           accountStatus: 'pending',
           invitationStatus: 'not_invited',
         },

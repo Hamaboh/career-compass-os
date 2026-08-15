@@ -16,4 +16,8 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsUUID()
   unitId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  positionId?: string;
 }

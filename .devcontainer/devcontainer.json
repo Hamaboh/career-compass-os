@@ -1,0 +1,46 @@
+{
+  "name": "career-compass-os",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.extend.yml"],
+  "service": "workspace",
+  "workspaceFolder": "/workspaces/career-compass-os",
+  "shutdownAction": "stopCompose",
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
+  },
+
+  // Caddy(80) / web dev server(3000) / api dev server(3001)。
+  // postgres(5432)/redis(6379)はdocker-compose.yml側で127.0.0.1限定公開のため、
+  // ここで転送する必要はない(同一Codespace内のworkspaceコンテナからはservice名で到達可能)。
+  "forwardPorts": [80, 3000, 3001],
+  "portsAttributes": {
+    "80": { "label": "Caddy (統合エントリーポイント)" },
+    "3000": { "label": "Web (Next.js dev)" },
+    "3001": { "label": "API (NestJS dev)" }
+  },
+
+  // .envが無ければ.env.exampleから複製してからnpm installする
+  // (.envはDESIGN_FREEZE同様「秘密情報はコミットしない」原則により.gitignore対象。
+  // Codespaces上でも実際のANTHROPIC_API_KEY等は各自Codespaces Secretsで上書きする想定)。
+  "postCreateCommand": "[ -f .env ] || cp .env.example .env && npm install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  },
+
+  "remoteUser": "vscode"
+}

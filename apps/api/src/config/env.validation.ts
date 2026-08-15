@@ -58,6 +58,19 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   LOGIN_LOCK_DURATION_MINUTES!: number;
+
+  /**
+   * Phase3 14章。未設定でも起動は許容する（AI機能を使わないローカル開発/CI/既存機能のテストを
+   * ブロックしないため、MailServiceのSMTP_HOST未設定時フォールバックと同じ考え方）。
+   * 実際にAiOrchestrationServiceが呼び出された時点で未設定なら例外を投げる（コード側で明示）。
+   */
+  @IsOptional()
+  @IsNotEmpty()
+  ANTHROPIC_API_KEY?: string;
+
+  @IsOptional()
+  @IsNotEmpty()
+  ANTHROPIC_MODEL?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

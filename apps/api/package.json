@@ -19,6 +19,7 @@
     "prisma:deploy": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@career-compass/shared": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.0",
@@ -55,13 +56,19 @@
     "typescript-eslint": "^8.19.1"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }

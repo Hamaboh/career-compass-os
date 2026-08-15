@@ -11,6 +11,12 @@ import { hashPassword } from '../src/common/security/password-hash';
  * （career_compass_test / RedisのDB index 1、Docker Composeで起動中のもの）に対して検証する。
  * SMTP実送信は行わず、MockMailServiceで本文を捕捉してOTP/招待トークンを取り出す。
  */
+// 他のe2eスペックと同じ理由（アプリ全体のブートストラップが環境依存でJestデフォルトの
+// 30秒を超えることがある）でタイムアウトを緩める。MVP完成フェーズでAppModuleに
+// モジュールが増えたことでブートストラップ時間が伸び、本フェーズで初めて発現した
+// （このファイルだけ後から追加されたモジュール群を含む起動コストの影響を受けていなかった）。
+jest.setTimeout(120000);
+
 describe('Auth flow (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;

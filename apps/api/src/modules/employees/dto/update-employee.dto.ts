@@ -11,4 +11,8 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsUUID()
   unitId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  positionId?: string | null;
 }
