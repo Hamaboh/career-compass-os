@@ -30,7 +30,12 @@
 
   // .envはDESIGN_FREEZE同様「秘密情報はコミットしない」原則により.gitignore対象。
   // Codespaces上でも実際のANTHROPIC_API_KEY等は各自Codespaces Secretsで上書きする想定。
-  "postCreateCommand": "npm install",
+  //
+  // dockerクライアント(CLI)はイメージに同梱されていないため、ホストのDockerソケットを
+  // マウントしただけでは操作できない(docker-compose.extend.yml参照)。
+  // apt経由でdocker.io(CLIのみ実質使用)を導入し、nodeユーザーをdockerグループへ追加する
+  // (グループ変更はターミナル再接続後に有効。それまでは `sudo docker ...` で代用可能)。
+  "postCreateCommand": "sudo apt-get update -y && sudo apt-get install -y docker.io && sudo usermod -aG docker node && npm install",
 
   "customizations": {
     "vscode": {

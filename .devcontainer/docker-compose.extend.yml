@@ -14,6 +14,12 @@ services:
     image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
     volumes:
       - ..:/workspaces/career-compass-os:cached
+      # ホストのDockerソケットをそのままマウントする(docker-outside-of-docker方式)。
+      # postgres/api/worker/web/caddyはworkspaceとは別の兄弟コンテナとして動くため、
+      # workspace内のターミナルから `docker compose ps` 等で状態確認したい場合、
+      # dockerクライアント自体とソケットへのアクセスが要る(2026-08-16、実機のCodespacesで
+      # ブラウザ経由の動作確認中に docker: command not found で発覚)。
+      - /var/run/docker.sock:/var/run/docker.sock
     command: sleep infinity
     environment:
       # api/webはDocker内部ネットワーク上で稼働するため、コンテナ名で到達する
