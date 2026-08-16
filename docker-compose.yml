@@ -26,6 +26,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # 初回起動時のみ initdb + infra/postgres/init のロール作成スクリプトが走るため、
+      # ボリュームが新規(クラウド上のCodespaces初回起動やクリーンなVolume等)だと
+      # 通常の interval×retries=50秒では間に合わないことがある(2026-08-16、実機の
+      # GitHub Codespacesで dependency failed to start: postgres is unhealthy により
+      # コンテナ作成自体が失敗して発覚)。start_period中の失敗はretriesを消費しないため、
+      # 2回目以降の起動(ボリューム再利用時)の検知速度には影響しない。
+      start_period: 60s
     # Step 0で追加: Prisma migrate / ローカルJestからの接続用に127.0.0.1のみへ公開する
     # （0.0.0.0ではないためLAN上の他端末からは到達不可。1.3節「外部に公開するのはCaddyのみ」の
     # 「外部」＝LAN/インターネットを指しており、ループバックはこの原則に抵触しない、との判断）。
