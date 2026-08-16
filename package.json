@@ -19,7 +19,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
-    "postinstall": "npm run build --workspace=packages/shared && npm run prisma:generate --workspace=apps/api"
+    "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {
     "prettier": "^3.4.2",
