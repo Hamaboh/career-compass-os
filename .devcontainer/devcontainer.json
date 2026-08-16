@@ -46,7 +46,11 @@
         "editor.defaultFormatter": "esbenp.prettier-vscode"
       }
     }
-  },
+  }
 
-  "remoteUser": "vscode"
+  // remoteUserは意図的に指定しない。devcontainers/base系は既定ユーザーが"vscode"だが、
+  // typescript-nodeイメージは"node"であり、明示的に"vscode"を指定すると
+  // 実機のCodespacesで "unable to find user vscode: no matching entries in passwd file"
+  // で失敗する(2026-08-16、実機検証で発覚)。指定を省略し、イメージ自身のUSERディレクティブに
+  // 委ねることでこのミスマッチを構造的に避ける。
 }
