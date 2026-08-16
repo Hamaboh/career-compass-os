@@ -19,10 +19,18 @@
     "3001": { "label": "API (NestJS dev)" }
   },
 
-  // .envが無ければ.env.exampleから複製してからnpm installする
-  // (.envはDESIGN_FREEZE同様「秘密情報はコミットしない」原則により.gitignore対象。
-  // Codespaces上でも実際のANTHROPIC_API_KEY等は各自Codespaces Secretsで上書きする想定)。
-  "postCreateCommand": "[ -f .env ] || cp .env.example .env && npm install",
+  // .envの複製は initializeCommand(コンテナ作成"前"、ホスト側で実行)で行う必要がある。
+  // docker-compose.yml側のapi/worker/webが env_file: .env を参照しているため、
+  // `docker compose config` によるcompose設定の解決自体が.env不在だと即エラーになり、
+  // コンテナが1つも作られる前に失敗する(postCreateCommandはコンテナ作成"後"にしか
+  // 実行されないため、この問題を解決できない。2026-08-16、実機のCodespacesで
+  // 「recovery containerへフォールバックし、目的のworkspaceコンテナが実際には
+  // 一度も作られていない」ことをcreation.logで確認して発覚)。
+  "initializeCommand": "[ -f .env ] || cp .env.example .env",
+
+  // .envはDESIGN_FREEZE同様「秘密情報はコミットしない」原則により.gitignore対象。
+  // Codespaces上でも実際のANTHROPIC_API_KEY等は各自Codespaces Secretsで上書きする想定。
+  "postCreateCommand": "npm install",
 
   "customizations": {
     "vscode": {
