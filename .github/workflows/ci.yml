@@ -21,7 +21,14 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        # postinstallでpackages/sharedのビルドとPrisma Client生成が走る(package.json参照)。
+        # prisma generateはDB接続不要だが、schema.prisma側でenv("DATABASE_URL")を
+        # 参照しているためダミー値を与える(実際に接続はしない。2026-08-16、
+        # GitHub Actions初回実行でCannot find module '@career-compass/shared' /
+        # Module '@prisma/client' has no exported member 'AppSetting' が発覚し追加)。
         run: npm install
+        env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy?schema=public
 
       - name: Lint
         run: npm run lint
