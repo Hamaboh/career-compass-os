@@ -6,7 +6,12 @@
 # 「workspace」コンテナを1つ追加するだけで、既存サービス定義には一切触れない。
 services:
   workspace:
-    image: mcr.microsoft.com/devcontainers/base:noble
+    # devcontainer.jsonのfeatures(ghcr.io/devcontainers/features/node:1)経由での
+    # Node導入は、dockerComposeFile+image構成では機能インジェクションが効かず
+    # nodeコマンド自体が存在しないまま起動することを実機のCodespacesで確認した
+    # (2026-08-16、gh codespace sshで直接検証しnode: command not foundを確認)。
+    # featuresに頼らず、Node 22が最初から入っている公式イメージを直接使う。
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
     volumes:
       - ..:/workspaces/career-compass-os:cached
     command: sleep infinity

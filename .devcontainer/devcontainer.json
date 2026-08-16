@@ -5,11 +5,9 @@
   "workspaceFolder": "/workspaces/career-compass-os",
   "shutdownAction": "stopCompose",
 
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "22"
-    }
-  },
+  // Node 22はworkspaceイメージ自体(typescript-node:1-22-bookworm)に同梱済み。
+  // features経由のNode導入はこのdockerComposeFile構成では機能しないことを確認済みのため
+  // 使わない(docker-compose.extend.yml参照)。
 
   // Caddy(80) / web dev server(3000) / api dev server(3001)。
   // postgres(5432)/redis(6379)はdocker-compose.yml側で127.0.0.1限定公開のため、
