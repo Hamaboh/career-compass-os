@@ -31,6 +31,11 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY --from=build /repo/apps/api/prisma ./apps/api/prisma
 COPY --from=build /repo/packages/shared ./packages/shared
+COPY apps/api/docker-entrypoint.sh /repo/apps/api/docker-entrypoint.sh
+RUN chmod +x /repo/apps/api/docker-entrypoint.sh
 WORKDIR /repo/apps/api
 EXPOSE 3001
+# entrypointがapi/worker共通でマイグレーション適用してから、それぞれのCMD/commandを
+# execする(worker側はdocker-compose.ymlのcommand指定でdist/worker.jsに差し替わる)。
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]
