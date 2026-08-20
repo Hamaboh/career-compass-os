@@ -4,7 +4,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の再設計中（Phase 0〜2完了）**です。コード実装は開始していません。
+現在は**要件再定義後の再設計中（Phase 0〜3完了）**です。コード実装は開始していません。
 
 旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 1〜5と新Design Freezeが完成するまで実装は禁止です。
 
@@ -31,7 +31,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 | Phase 0 | 一次資料、決定事項、用語、制度ルール、旧仕様失効範囲 | 完了 |
 | Phase 1 | プロダクト、業務、要件、MVP | 完了 |
 | Phase 2 | AIロジック、匿名化、Prompt契約、評価・費用統制 | 完了 |
-| Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用 | 未着手 |
+| Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用 | 完了 |
 | Phase 4 | UI/UX、テスト、実装計画 | 未着手 |
 | Phase 5 | 最終レビュー、トレーサビリティ、新Design Freeze | 未着手 |
 | AI PoC | 低価格モデルの品質・安全性・費用比較 | 実装前に実施 |
@@ -60,3 +60,14 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 4. [`23-ai-contracts-state-transitions.md`](docs/phase-2/23-ai-contracts-state-transitions.md)
 5. [`24-one-on-one-continuous-support.md`](docs/phase-2/24-one-on-one-continuous-support.md)
 6. [`25-poc-evaluation-cost.md`](docs/phase-2/25-poc-evaluation-cost.md)
+
+## Phase 3の読順
+
+1. [`30-architecture-stack.md`](docs/phase-3/30-architecture-stack.md)
+2. [`31-data-model-er.md`](docs/phase-3/31-data-model-er.md)
+3. [`32-data-rules-migrations.md`](docs/phase-3/32-data-rules-migrations.md)
+4. [`33-api-contracts.md`](docs/phase-3/33-api-contracts.md)
+5. [`34-auth-rbac-access-control.md`](docs/phase-3/34-auth-rbac-access-control.md)
+6. [`35-security-privacy-threat-model.md`](docs/phase-3/35-security-privacy-threat-model.md)
+7. [`36-operations-deployment-recovery.md`](docs/phase-3/36-operations-deployment-recovery.md)
+8. [`37-decisions-traceability.md`](docs/phase-3/37-decisions-traceability.md)
