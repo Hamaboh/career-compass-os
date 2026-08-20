@@ -32,15 +32,15 @@ PostgreSQL、object storage、設定、migration履歴をbackup対象とする�
 | invitation/reset秘密 | 消費・失効後に秘密部分削除 |
 | session | 失効後30日以内に削除 |
 | auth event | 1年 |
-| audit | 3年。正式運用前に承認 |
+| audit | 3年 |
 | AI raw output | 30日以内または非保存 |
 | AI proposal/decision | 関連domainの保持期間 |
 | policy version | 参照goalがある限り保持 |
 | self analysis/dream/Why | 本人管理、退職・削除policyに従う |
-| one-on-one共有記録 | 3年を仮置き、正式承認が必要 |
+| one-on-one共有記録 | 3年 |
 | file | 関連recordと連動 |
 
-法令・就業規則・個人情報方針により正式値を変更する場合はADRとdata migration計画を必要とする。
+上表をengineering defaultとして実装する。本番で実データを投入する前に、会社の法務・個人情報・就業規則上の承認を得る。承認により値を変更する場合はADR、影響分析、data migration計画を必要とする。この組織承認はPhase 0〜開発環境での実装開始を妨げない。
 
 ## 5. Lifecycle
 
@@ -53,3 +53,14 @@ credential漏洩、cross-unit閲覧、AI data leak、malware upload、audit異�
 ## 7. External dependencies
 
 mail、LLM、object storage、DNS/TLS、backup storageをadapter化する。mail/LLM障害はqueue retryと手動fallbackを提供する。LLM providerには保存・training・region・削除・model versionの契約確認を行う。
+
+MVPの実装baselineは以下とする。
+
+- development/test mail: 外部送信しないcapture adapter
+- production mail: SMTP adapter。vendor、送信domain、credentialは本番移行時に設定する
+- LLM: provider-neutral server adapter、deterministic fake adapterをtestで使用する。production provider未設定時はAI機能をfail-closedで無効化し、非AI fallbackを使用する
+- object storage: S3-compatible API。development/testはcontainer、production endpointはenvironmentで注入する
+- TLS: reverse proxyで終端し、development用証明書とproduction証明書を分離する
+- backup: 暗号化した別failure domainを本番移行時に指定する
+
+vendor契約やcredentialがなくてもadapter、契約test、fallbackまで実装できるため、外部vendorの最終選定は実装開始条件ではない。

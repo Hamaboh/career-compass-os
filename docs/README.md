@@ -10,6 +10,7 @@
 6. 実装対象に対応する補助仕様
 7. [`13-traceability-matrix.md`](13-traceability-matrix.md)
 8. [`14-implementation-roadmap.md`](14-implementation-roadmap.md)
+9. [`15-implementation-readiness.md`](15-implementation-readiness.md)
 
 ## 文書一覧
 
@@ -30,6 +31,7 @@
 | [`12-operations-and-retention.md`](12-operations-and-retention.md) | 環境、監視、backup、保持、incident |
 | [`13-traceability-matrix.md`](13-traceability-matrix.md) | 要件から実装・testへの追跡 |
 | [`14-implementation-roadmap.md`](14-implementation-roadmap.md) | 実装Phase、依存、DoD |
+| [`15-implementation-readiness.md`](15-implementation-readiness.md) | 実装開始判定、確定済みbaseline、人間作業 |
 | [`decisions/`](decisions/) | Architecture Decision Records |
 
 ## 仕様の強さ

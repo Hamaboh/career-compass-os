@@ -3,6 +3,7 @@
 ## 1. 状態
 
 - 仕様状態: FROZEN FOR IMPLEMENTATION
+- 実装準備判定: READY（`15-implementation-readiness.md`参照）
 - 対象: Phase 1〜4および本インデックスから参照される実装補助仕様
 - リポジトリ状態: 実装開始前
 - 正式仕様言語: 日本語
@@ -82,6 +83,8 @@ AIが自動実行できるのは、原則として下書き・候補生成・検
 - UL私的メモはMVPで原則実装しない。必要になった場合は別ADRと保持方針を必須とする。
 - 通知はMVPでin-appを必須、emailは認証と重要通知に限定して導入する。
 - LLMへ客先機密、credential、source code、健康情報、ハラスメント本文、他Member情報を自動送信しない。
+- 技術baselineと外部依存の既定はADR-0006、ADR-0007に従う。
+- 法務、契約、社内連絡先、production credentialは本番移行条件であり、adapterと安全なfallbackを使う実装開始を妨げない。
 
 ## 7. 完了条件
 

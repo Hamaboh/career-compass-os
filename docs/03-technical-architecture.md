@@ -19,17 +19,17 @@ flowchart TB
 
 ## 2. Stack
 
-- Node.jsの実装時点LTS、TypeScript
-- Next.js App Router、React、Tailwind CSS、accessible headless UI
-- NestJS modular monolith、REST JSON、OpenAPI
-- PostgreSQL安定版、Prisma GA、custom SQL migration
-- Redis server-side session、rate limit、BullMQ
+- Node.js 24 LTS、TypeScript、npm workspaces
+- Next.js 16、React 19、Tailwind CSS 4、accessible headless UI
+- NestJS 11 modular monolith、REST JSON、OpenAPI
+- PostgreSQL 18、Prisma 7 GA、custom SQL migration
+- Redis 8 server-side session、rate limit、BullMQ
 - S3-compatible object storage
 - Caddy等のTLS reverse proxy
 - unit/component/API integration/E2E test
 - Docker Composeによる単一host MVP
 
-具体versionは相互互換性のあるGA/LTSを実装開始時に固定し、lockfileで管理する。RC/betaは使用しない。
+上記majorを設計baselineとする。Phase 0開始時に、そのmajor内で相互互換性とsecurity advisoryを確認した最新GA/LTS patchを`package.json`、runtime設定、container image、lockfileへ固定する。RC/beta、EOL、未固定のfloating image tagは使用しない。major変更は設計変更としてADRを必要とする。
 
 ## 3. Module boundaries
 

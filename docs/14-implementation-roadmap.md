@@ -1,10 +1,12 @@
 # 実装ロードマップ
 
+実装開始前に[`15-implementation-readiness.md`](15-implementation-readiness.md)のgateを確認する。現在の判定はREADYである。
+
 ## Phase 0: Repository foundation
 
 ### Scope
 
-monorepo、Node/package manager固定、TypeScript、Next.js、NestJS、shared contract、format/lint/typecheck/test、OpenAPI、Docker Compose、PostgreSQL、Redis、storage、environment validation、structured logging、CI。
+monorepo、ADR-0006のNode/package manager固定、TypeScript、Next.js、NestJS、shared contract、format/lint/typecheck/test、OpenAPI、Docker Compose、PostgreSQL、Redis、storage、environment validation、structured logging、CI。
 
 ### DoD
 
