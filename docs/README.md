@@ -4,7 +4,7 @@
 
 要件変更により、既存のPhase 1〜4、Design Freeze、補助仕様、ADRは履歴資料になりました。現時点では実装根拠として使用できません。
 
-新しい設計はPhase 0から再構築しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
+新しい設計はPhase 0から再構築し、Phase 2まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
 
 ## 現在の正式な読順
 
@@ -18,8 +18,14 @@
 8. [`phase-1/12-use-cases-workflows.md`](phase-1/12-use-cases-workflows.md)
 9. [`phase-1/13-requirements.md`](phase-1/13-requirements.md)
 10. [`phase-1/14-mvp-acceptance.md`](phase-1/14-mvp-acceptance.md)
-11. 今後作成する新Phase 2〜5
-12. 今後作成する新Design Freeze
+11. [`phase-2/20-ai-principles-modules.md`](phase-2/20-ai-principles-modules.md)
+12. [`phase-2/21-self-life-career-goal-logic.md`](phase-2/21-self-life-career-goal-logic.md)
+13. [`phase-2/22-anonymization-context-boundary.md`](phase-2/22-anonymization-context-boundary.md)
+14. [`phase-2/23-ai-contracts-state-transitions.md`](phase-2/23-ai-contracts-state-transitions.md)
+15. [`phase-2/24-one-on-one-continuous-support.md`](phase-2/24-one-on-one-continuous-support.md)
+16. [`phase-2/25-poc-evaluation-cost.md`](phase-2/25-poc-evaluation-cost.md)
+17. 今後作成する新Phase 3〜5
+18. 今後作成する新Design Freeze
 
 ## Phase 0文書
 
@@ -36,19 +42,25 @@
 | 文書 | 目的 |
 |---|---|
 | [`phase-1/10-product-definition.md`](phase-1/10-product-definition.md) | コンセプト、ビジョン、課題、利用者、価値、成功状態、非目的 |
-| [`phase-1/11-personas-journeys.md`](phase-1/11-personas-journeys.md) | ペルソナ、As-Is/To-Be、Member・UL・上位役職者・本人確認のジャーニー |
-| [`phase-1/12-use-cases-workflows.md`](phase-1/12-use-cases-workflows.md) | 主要ユースケース、目標・AI匿名化・1on1・レビュー業務フロー |
-| [`phase-1/13-requirements.md`](phase-1/13-requirements.md) | ID付き機能要件、非機能要件、禁止要件 |
-| [`phase-1/14-mvp-acceptance.md`](phase-1/14-mvp-acceptance.md) | MVP必須・対象外・将来候補、業務・AI・セキュリティ・運用受入条件 |
+| [`phase-1/11-personas-journeys.md`](phase-1/11-personas-journeys.md) | ペルソナ、As-Is/To-Be、各利用者のジャーニー |
+| [`phase-1/12-use-cases-workflows.md`](phase-1/12-use-cases-workflows.md) | 主要ユースケースと業務フロー |
+| [`phase-1/13-requirements.md`](phase-1/13-requirements.md) | ID付き機能・非機能・禁止要件 |
+| [`phase-1/14-mvp-acceptance.md`](phase-1/14-mvp-acceptance.md) | MVP範囲と受入条件 |
+
+## Phase 2文書
+
+| 文書 | 目的 |
+|---|---|
+| [`phase-2/20-ai-principles-modules.md`](phase-2/20-ai-principles-modules.md) | AI原則、情報出所、論理モジュール、人間の判断境界 |
+| [`phase-2/21-self-life-career-goal-logic.md`](phase-2/21-self-life-career-goal-logic.md) | 自己理解、将来像、Why、目標階層、SMART、本人確認 |
+| [`phase-2/22-anonymization-context-boundary.md`](phase-2/22-anonymization-context-boundary.md) | 外部送信分類、匿名化、最小コンテキスト、漏えい対策 |
+| [`phase-2/23-ai-contracts-state-transitions.md`](phase-2/23-ai-contracts-state-transitions.md) | AI入出力契約、状態遷移、提案採否、監査証跡 |
+| [`phase-2/24-one-on-one-continuous-support.md`](phase-2/24-one-on-one-continuous-support.md) | 1on1、進捗、通知、目標変更、例外処理 |
+| [`phase-2/25-poc-evaluation-cost.md`](phase-2/25-poc-evaluation-cost.md) | PoC、品質基準、モデル選定、月額1,000円上限 |
 
 ## 旧文書
 
-`00-design-freeze.md`、`01-product-definition.md`〜`15-implementation-readiness.md`、`decisions/`は旧設計の履歴資料です。
-
-- 削除はしない。
-- 新設計の根拠として引用しない。
-- 新Phaseで採用し直した原則だけを新文書へ移す。
-- 新Design Freeze完成後に、履歴ディレクトリへの移動または明確なアーカイブ表示を検討する。
+`00-design-freeze.md`、`01-product-definition.md`〜`15-implementation-readiness.md`、`decisions/`は旧設計の履歴資料です。削除せず、新設計の根拠として引用せず、新Design Freeze完成後にアーカイブ表示を再検討します。
 
 ## 重要な変更点
 
@@ -57,6 +69,5 @@
 - PostgreSQL、Redis、BullMQ、NestJS前提を失効。
 - Cloudflare Workers、D1、R2、AI Gateway、Workers AIを基本案として再評価。
 - 本人の幸福・ライフ・キャリアを会社制度より上位に置く。
-- AIは必須だが、匿名化とUL送信前確認を必須とする。
+- AIは必須だが、匿名化、UL送信前確認、人間による確定を必須とする。
 - 本アプリは正式な人事評価・給与決定ツールにしない。
-
