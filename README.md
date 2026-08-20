@@ -4,11 +4,11 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の再設計中（Phase 0〜4完了）**です。コード実装は開始していません。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**です。コード実装はまだ開始していません。
 
-旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 1〜5と新Design Freezeが完成するまで実装は禁止です。
+旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 0〜5と新Design Freezeを正式仕様とします。
 
-新しい設計基準は[`docs/phase-0/`](docs/phase-0/)から順に参照してください。
+実装時は[`docs/phase-0/`](docs/phase-0/)から[`docs/phase-5/`](docs/phase-5/)まで順に参照してください。Repository foundationは開始可能です。実AI接続はAI PoC合格後、本番運用は本番ゲート合格後に限ります。
 
 ## 現在の中核方針
 
@@ -33,8 +33,8 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 | Phase 2 | AIロジック、匿名化、Prompt契約、評価・費用統制 | 完了 |
 | Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用 | 完了 |
 | Phase 4 | UI/UX、テスト、実装計画 | 完了 |
-| Phase 5 | 最終レビュー、トレーサビリティ、新Design Freeze | 未着手 |
-| AI PoC | 低価格モデルの品質・安全性・費用比較 | 実装前に実施 |
+| Phase 5 | 最終レビュー、トレーサビリティ、新Design Freeze | 完了 |
+| AI PoC | 低価格モデルの品質・安全性・費用比較 | 実AI接続前に実施 |
 
 ## Phase 0の読順
 
@@ -82,3 +82,11 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 6. [`45-test-plan-e2e.md`](docs/phase-4/45-test-plan-e2e.md)
 7. [`46-implementation-roadmap-dod.md`](docs/phase-4/46-implementation-roadmap-dod.md)
 8. [`47-phase4-review-traceability.md`](docs/phase-4/47-phase4-review-traceability.md)
+
+## Phase 5の読順
+
+1. [`50-final-design-review.md`](docs/phase-5/50-final-design-review.md)
+2. [`51-master-requirements-traceability.md`](docs/phase-5/51-master-requirements-traceability.md)
+3. [`52-readiness-gates-manual-setup.md`](docs/phase-5/52-readiness-gates-manual-setup.md)
+4. [`53-design-freeze.md`](docs/phase-5/53-design-freeze.md)
+5. [`54-implementation-handoff.md`](docs/phase-5/54-implementation-handoff.md)
