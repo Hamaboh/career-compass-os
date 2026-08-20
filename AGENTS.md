@@ -15,7 +15,12 @@
 3. `docs/phase-0/02-glossary.md`
 4. `docs/phase-0/03-policy-rules.md`
 5. `docs/phase-0/04-supersession.md`
-6. 作業対象の新Phase文書
+6. `docs/phase-1/10-product-definition.md`
+7. `docs/phase-1/11-personas-journeys.md`
+8. `docs/phase-1/12-use-cases-workflows.md`
+9. `docs/phase-1/13-requirements.md`
+10. `docs/phase-1/14-mvp-acceptance.md`
+11. 作業対象の後続Phase文書
 
 旧`docs/00-design-freeze.md`および旧`docs/01`〜`docs/15`は、変更経緯確認以外には使用しない。
 
