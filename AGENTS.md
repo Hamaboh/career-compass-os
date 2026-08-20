@@ -26,7 +26,15 @@
 14. `docs/phase-2/23-ai-contracts-state-transitions.md`
 15. `docs/phase-2/24-one-on-one-continuous-support.md`
 16. `docs/phase-2/25-poc-evaluation-cost.md`
-17. 作業対象の後続Phase文書
+17. `docs/phase-3/30-architecture-stack.md`
+18. `docs/phase-3/31-data-model-er.md`
+19. `docs/phase-3/32-data-rules-migrations.md`
+20. `docs/phase-3/33-api-contracts.md`
+21. `docs/phase-3/34-auth-rbac-access-control.md`
+22. `docs/phase-3/35-security-privacy-threat-model.md`
+23. `docs/phase-3/36-operations-deployment-recovery.md`
+24. `docs/phase-3/37-decisions-traceability.md`
+25. 作業対象の後続Phase文書
 
 旧`docs/00-design-freeze.md`および旧`docs/01`〜`docs/15`は、変更経緯確認以外には使用しない。
 
@@ -57,7 +65,18 @@
 - Frontend表示だけを認可としない。
 - APIで利用者状態、ロール、Unit scope、記録の機密区分を検証する。
 - 監査ログ経由で権限外情報を漏えいさせない。
-- D1を前提とする永続層の認可強制方法は新Phase 3で確定する。旧PostgreSQL RLS仕様を流用しない。
+- D1にRLSはないため、中央認可Policy、Principal必須repository、Unit scopeを含むquery、API deny testで強制する。旧PostgreSQL RLS仕様を流用しない。
+- Cloudflare Access JWTはheaderの存在だけでなく署名、issuer、audience、期限を検証する。
+
+## Technical baseline
+
+- Next.js App Router + TypeScriptを`@opennextjs/cloudflare`でCloudflare Workersへ配置する単一full-stack構成とする。
+- D1 + Drizzle + SQL migration、private R2、Cloudflare Access、AI Gatewayを基本とする。
+- NestJS、PostgreSQL、Redis、BullMQ、Vercel、app password、OTPはMVPで採用しない。
+- 初期background処理はCron + D1 job/outboxとし、Queuesは必要性が確認された場合だけ採用する。
+- 本人向けHTMLはprivate R2へ保存し、Workerがhash化share token、期限、失効を検証して配信する。
+- 初期メール経路はGmail API adapterとする。既存SMTPはport 465/587のPoC後に限りadapterとして追加できる。
+- production、preview、local/CIのD1/R2/Access/Secretを分離し、本番個人データをpreview/CIへコピーしない。
 
 ## Source documents
 
