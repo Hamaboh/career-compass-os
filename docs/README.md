@@ -2,9 +2,9 @@
 
 ## 現在の設計状態
 
-要件変更により、既存のPhase 1〜4、Design Freeze、補助仕様、ADRは履歴資料になりました。現時点では実装根拠として使用できません。
+要件変更前のPhase 1〜4、Design Freeze、補助仕様、ADRは履歴資料であり、実装根拠として使用できません。
 
-新しい設計はPhase 0から再構築し、Phase 4まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
+新しい設計はPhase 0から再構築し、Phase 5と新Design Freezeまで完了しました。Repository foundationは開始可能です。実AI接続と本番運用は、それぞれPhase 5で定義したゲートを満たすまで開始できません。
 
 ## 現在の正式な読順
 
@@ -40,8 +40,11 @@
 30. [`phase-4/45-test-plan-e2e.md`](phase-4/45-test-plan-e2e.md)
 31. [`phase-4/46-implementation-roadmap-dod.md`](phase-4/46-implementation-roadmap-dod.md)
 32. [`phase-4/47-phase4-review-traceability.md`](phase-4/47-phase4-review-traceability.md)
-33. 今後作成する新Phase 5
-34. 今後作成する新Design Freeze
+33. [`phase-5/50-final-design-review.md`](phase-5/50-final-design-review.md)
+34. [`phase-5/51-master-requirements-traceability.md`](phase-5/51-master-requirements-traceability.md)
+35. [`phase-5/52-readiness-gates-manual-setup.md`](phase-5/52-readiness-gates-manual-setup.md)
+36. [`phase-5/53-design-freeze.md`](phase-5/53-design-freeze.md)
+37. [`phase-5/54-implementation-handoff.md`](phase-5/54-implementation-handoff.md)
 
 ## Phase 0文書
 
@@ -100,9 +103,19 @@
 | [`phase-4/46-implementation-roadmap-dod.md`](phase-4/46-implementation-roadmap-dod.md) | vertical slice実装順、共通DoD、MVP DoD、release gate |
 | [`phase-4/47-phase4-review-traceability.md`](phase-4/47-phase4-review-traceability.md) | Phase 1〜4横断review、risk、要件対応、完了判定 |
 
+## Phase 5文書
+
+| 文書 | 目的 |
+|---|---|
+| [`phase-5/50-final-design-review.md`](phase-5/50-final-design-review.md) | Phase 0〜4の最終横断レビュー、矛盾・過剰設計・残余リスクの判定 |
+| [`phase-5/51-master-requirements-traceability.md`](phase-5/51-master-requirements-traceability.md) | 全FR/NFR/禁止要件と設計・実装slice・testの対応 |
+| [`phase-5/52-readiness-gates-manual-setup.md`](phase-5/52-readiness-gates-manual-setup.md) | 実装・外部接続・本番のゲート、PoC、手動準備、release checklist |
+| [`phase-5/53-design-freeze.md`](phase-5/53-design-freeze.md) | 正式実装仕様の凍結、優先順位、変更統制、開始条件 |
+| [`phase-5/54-implementation-handoff.md`](phase-5/54-implementation-handoff.md) | 最初の実装sliceと実装担当者への引き継ぎ条件 |
+
 ## 旧文書
 
-`00-design-freeze.md`、`01-product-definition.md`〜`15-implementation-readiness.md`、`decisions/`は旧設計の履歴資料です。削除せず、新設計の根拠として引用せず、新Design Freeze完成後にアーカイブ表示を再検討します。
+`00-design-freeze.md`、`01-product-definition.md`〜`15-implementation-readiness.md`、`decisions/`は旧設計の履歴資料です。削除せず、新設計の根拠として引用しません。正式なDesign Freezeは`phase-5/53-design-freeze.md`です。
 
 ## 重要な変更点
 
