@@ -4,7 +4,7 @@
 
 要件変更により、既存のPhase 1〜4、Design Freeze、補助仕様、ADRは履歴資料になりました。現時点では実装根拠として使用できません。
 
-新しい設計はPhase 0から再構築し、Phase 3まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
+新しい設計はPhase 0から再構築し、Phase 4まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
 
 ## 現在の正式な読順
 
@@ -32,8 +32,16 @@
 22. [`phase-3/35-security-privacy-threat-model.md`](phase-3/35-security-privacy-threat-model.md)
 23. [`phase-3/36-operations-deployment-recovery.md`](phase-3/36-operations-deployment-recovery.md)
 24. [`phase-3/37-decisions-traceability.md`](phase-3/37-decisions-traceability.md)
-25. 今後作成する新Phase 4〜5
-26. 今後作成する新Design Freeze
+25. [`phase-4/40-information-architecture-screens.md`](phase-4/40-information-architecture-screens.md)
+26. [`phase-4/41-ul-member-goal-ux.md`](phase-4/41-ul-member-goal-ux.md)
+27. [`phase-4/42-ai-one-on-one-share-ux.md`](phase-4/42-ai-one-on-one-share-ux.md)
+28. [`phase-4/43-executive-admin-ux.md`](phase-4/43-executive-admin-ux.md)
+29. [`phase-4/44-error-empty-accessibility.md`](phase-4/44-error-empty-accessibility.md)
+30. [`phase-4/45-test-plan-e2e.md`](phase-4/45-test-plan-e2e.md)
+31. [`phase-4/46-implementation-roadmap-dod.md`](phase-4/46-implementation-roadmap-dod.md)
+32. [`phase-4/47-phase4-review-traceability.md`](phase-4/47-phase4-review-traceability.md)
+33. 今後作成する新Phase 5
+34. 今後作成する新Design Freeze
 
 ## Phase 0文書
 
@@ -78,6 +86,19 @@
 | [`phase-3/35-security-privacy-threat-model.md`](phase-3/35-security-privacy-threat-model.md) | 脅威、XSS/SQLi/IDOR、Secret、AI・監査・incident |
 | [`phase-3/36-operations-deployment-recovery.md`](phase-3/36-operations-deployment-recovery.md) | CI/CD、通知、backup、復旧、監視、費用guardrail |
 | [`phase-3/37-decisions-traceability.md`](phase-3/37-decisions-traceability.md) | 技術決定、要件対応、残余risk、Phase 3完了判定 |
+
+## Phase 4文書
+
+| 文書 | 目的 |
+|---|---|
+| [`phase-4/40-information-architecture-screens.md`](phase-4/40-information-architecture-screens.md) | 情報設計、role別route、画面一覧、遷移、status |
+| [`phase-4/41-ul-member-goal-ux.md`](phase-4/41-ul-member-goal-ux.md) | ULの日常UX、本人理解、目標wizard、Why、SMART、本人確認 |
+| [`phase-4/42-ai-one-on-one-share-ux.md`](phase-4/42-ai-one-on-one-share-ux.md) | AI preview、1on1前後、共有HTML、通知 |
+| [`phase-4/43-executive-admin-ux.md`](phase-4/43-executive-admin-ux.md) | 全Unit review、利用者・制度・AI・監査・運用管理 |
+| [`phase-4/44-error-empty-accessibility.md`](phase-4/44-error-empty-accessibility.md) | error、empty、確認、WCAG 2.2 AA、日本語表現 |
+| [`phase-4/45-test-plan-e2e.md`](phase-4/45-test-plan-e2e.md) | test pyramid、権限matrix、security、15 E2E |
+| [`phase-4/46-implementation-roadmap-dod.md`](phase-4/46-implementation-roadmap-dod.md) | vertical slice実装順、共通DoD、MVP DoD、release gate |
+| [`phase-4/47-phase4-review-traceability.md`](phase-4/47-phase4-review-traceability.md) | Phase 1〜4横断review、risk、要件対応、完了判定 |
 
 ## 旧文書
 

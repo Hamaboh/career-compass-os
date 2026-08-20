@@ -34,7 +34,15 @@
 22. `docs/phase-3/35-security-privacy-threat-model.md`
 23. `docs/phase-3/36-operations-deployment-recovery.md`
 24. `docs/phase-3/37-decisions-traceability.md`
-25. 作業対象の後続Phase文書
+25. `docs/phase-4/40-information-architecture-screens.md`
+26. `docs/phase-4/41-ul-member-goal-ux.md`
+27. `docs/phase-4/42-ai-one-on-one-share-ux.md`
+28. `docs/phase-4/43-executive-admin-ux.md`
+29. `docs/phase-4/44-error-empty-accessibility.md`
+30. `docs/phase-4/45-test-plan-e2e.md`
+31. `docs/phase-4/46-implementation-roadmap-dod.md`
+32. `docs/phase-4/47-phase4-review-traceability.md`
+33. 作業対象の後続Phase文書
 
 旧`docs/00-design-freeze.md`および旧`docs/01`〜`docs/15`は、変更経緯確認以外には使用しない。
 
@@ -77,6 +85,17 @@
 - 本人向けHTMLはprivate R2へ保存し、Workerがhash化share token、期限、失効を検証して配信する。
 - 初期メール経路はGmail API adapterとする。既存SMTPはport 465/587のPoC後に限りadapterとして追加できる。
 - production、preview、local/CIのD1/R2/Access/Secretを分離し、本番個人データをpreview/CIへコピーしない。
+
+## UX and quality baseline
+
+- Member本人のMVP account画面は作らない。本人の体験はULとの共同確認と本人向けHTMLで提供する。
+- 目標作成は「探索」「曖昧な方向性」「明確な目標」「今は作らない」の4入口を持つ。
+- AI操作はすべてscope適用、匿名化、UL全文preview、承認を通し、一括採用をprimary actionにしない。
+- 共有URLの閲覧だけを本人承認とみなさない。ULが確認方法、日時、回答、本人の言葉を記録する。
+- UI statusは色だけで伝えず、AI・本人発言・UL所見・本人確認済みを明示する。
+- WCAG 2.2 Level AAを目標とし、自動testだけでなくkeyboard、screen reader、zoom、printを手動確認する。
+- 実装はvertical sliceで進め、各sliceにAPI認可negative test、error/empty/loading、監査、accessibilityを含める。
+- 手動業務flowを先に成立させてからAI safety pipelineを接続する。
 
 ## Source documents
 
