@@ -20,7 +20,13 @@
 8. `docs/phase-1/12-use-cases-workflows.md`
 9. `docs/phase-1/13-requirements.md`
 10. `docs/phase-1/14-mvp-acceptance.md`
-11. 作業対象の後続Phase文書
+11. `docs/phase-2/20-ai-principles-modules.md`
+12. `docs/phase-2/21-self-life-career-goal-logic.md`
+13. `docs/phase-2/22-anonymization-context-boundary.md`
+14. `docs/phase-2/23-ai-contracts-state-transitions.md`
+15. `docs/phase-2/24-one-on-one-continuous-support.md`
+16. `docs/phase-2/25-poc-evaluation-cost.md`
+17. 作業対象の後続Phase文書
 
 旧`docs/00-design-freeze.md`および旧`docs/01`〜`docs/15`は、変更経緯確認以外には使用しない。
 
@@ -39,9 +45,12 @@
 - AI提案、AI推測、本人発言、UL所見、本人確認済み情報、確定データを分離する。
 - 匿名化されていない社内情報・個人識別情報を外部AIへ送信しない。
 - 氏名、メール、社員ID、顧客名、案件名、会社固有語、人事評価用語を匿名化対象とする。
+- Unit scope認可、最小化、匿名化の順に処理し、再識別リスクが残る場合は送信しない。
 - ULが匿名化後の送信内容を毎回プレビューし、承認してからAIへ送信する。
+- AI応答を検証し、人間が採用した内容から別の確定レコードを作る。AI提案を直接昇格させない。
 - 学習不使用条件を確認できないAIモデルを本番利用しない。
 - 具体的なAIモデルは実装前PoCで確定する。
+- AI費用は初期月額1,000円を上限とし、到達時は新規AI呼出しだけを停止する。
 
 ## Authorization
 
@@ -70,12 +79,10 @@
 
 Phase 0〜5の設計変更では、少なくとも以下を確認する。
 
-- 文書リンク
-- 用語整合性
-- 決定IDの重複
+- 文書リンク、用語整合性、決定IDの重複
 - 確定・暫定・PoC待ちの区別
 - 旧仕様を正式仕様として参照していないこと
 - 本人中心原則と会社制度参照の境界
-- AIと人間の責任境界
-- Unit越境、機密情報、匿名化の境界
-
+- AIと人間の責任境界、AI提案と確定データの分離
+- Unit越境、機密情報、匿名化、再識別の境界
+- AI障害・予算停止時の手動継続
