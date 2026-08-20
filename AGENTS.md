@@ -2,9 +2,9 @@
 
 ## Current state
 
-本リポジトリは再設計中であり、実装開始前である。旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料であり、現時点の実装根拠ではない。
+本リポジトリはPhase 0〜5の再設計と新Design Freezeを完了し、実装開始前である。旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料であり、実装根拠ではない。
 
-新Phase 1〜5および新Design Freezeが完成し、実装開始判定が`READY`になるまで、アプリケーションコード、framework初期化、package、schema、migration、deploymentを作成してはならない。
+Repository foundationの実装開始判定は`READY`である。実装はPhase 4のI0〜I10とPhase 5のゲートに従う。実AI provider接続はPOC-01合格前、本番releaseは本番ゲート合格前に行ってはならない。
 
 ## Mandatory reading order
 
@@ -42,9 +42,23 @@
 30. `docs/phase-4/45-test-plan-e2e.md`
 31. `docs/phase-4/46-implementation-roadmap-dod.md`
 32. `docs/phase-4/47-phase4-review-traceability.md`
-33. 作業対象の後続Phase文書
+33. `docs/phase-5/50-final-design-review.md`
+34. `docs/phase-5/51-master-requirements-traceability.md`
+35. `docs/phase-5/52-readiness-gates-manual-setup.md`
+36. `docs/phase-5/53-design-freeze.md`
+37. `docs/phase-5/54-implementation-handoff.md`
 
 旧`docs/00-design-freeze.md`および旧`docs/01`〜`docs/15`は、変更経緯確認以外には使用しない。
+
+`docs/phase-5/53-design-freeze.md`を正式なDesign Freezeとし、競合時は同文書の仕様優先順位に従う。
+
+## Readiness gates
+
+- I0 Repository foundationは開始可能である。最初の実装は`docs/phase-5/54-implementation-handoff.md`の範囲を超えない。
+- I1以降は`docs/phase-5/52-readiness-gates-manual-setup.md`のslice別入口条件を満たしてから着手する。
+- AI provider未確定中はfake provider/fixtureで境界を実装し、実送信を行わない。
+- POC-01に合格し、利用モデル・privacy条件・budgetを記録するまで実AI providerを接続しない。
+- 本番用Access、Gmail、domain、D1/R2/Secret、初期利用者、incident連絡先、pilot受入が揃うまで本番releaseしない。
 
 ## Product authority
 
