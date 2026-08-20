@@ -4,7 +4,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の再設計中（Phase 0完了）**です。コード実装は開始していません。
+現在は**要件再定義後の再設計中（Phase 0・Phase 1完了）**です。コード実装は開始していません。
 
 旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 1〜5と新Design Freezeが完成するまで実装は禁止です。
 
@@ -28,7 +28,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 | Phase | 内容 | 状態 |
 |---|---|---|
 | Phase 0 | 一次資料、決定事項、用語、制度ルール、旧仕様失効範囲 | 完了 |
-| Phase 1 | プロダクト、業務、要件、MVP | 未着手 |
+| Phase 1 | プロダクト、業務、要件、MVP | 完了 |
 | Phase 2 | AIロジック、匿名化、Prompt、評価 | 未着手 |
 | Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用 | 未着手 |
 | Phase 4 | UI/UX、テスト、実装計画 | 未着手 |
@@ -43,3 +43,11 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 4. [`03-policy-rules.md`](docs/phase-0/03-policy-rules.md)
 5. [`04-supersession.md`](docs/phase-0/04-supersession.md)
 
+
+## Phase 1の読順
+
+1. [`10-product-definition.md`](docs/phase-1/10-product-definition.md)
+2. [`11-personas-journeys.md`](docs/phase-1/11-personas-journeys.md)
+3. [`12-use-cases-workflows.md`](docs/phase-1/12-use-cases-workflows.md)
+4. [`13-requirements.md`](docs/phase-1/13-requirements.md)
+5. [`14-mvp-acceptance.md`](docs/phase-1/14-mvp-acceptance.md)
