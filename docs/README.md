@@ -4,7 +4,7 @@
 
 要件変更により、既存のPhase 1〜4、Design Freeze、補助仕様、ADRは履歴資料になりました。現時点では実装根拠として使用できません。
 
-新しい設計はPhase 0から再構築し、Phase 2まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
+新しい設計はPhase 0から再構築し、Phase 3まで完了しています。新Phase 1〜5と新Design Freezeが完成するまでコード実装は禁止です。
 
 ## 現在の正式な読順
 
@@ -24,8 +24,16 @@
 14. [`phase-2/23-ai-contracts-state-transitions.md`](phase-2/23-ai-contracts-state-transitions.md)
 15. [`phase-2/24-one-on-one-continuous-support.md`](phase-2/24-one-on-one-continuous-support.md)
 16. [`phase-2/25-poc-evaluation-cost.md`](phase-2/25-poc-evaluation-cost.md)
-17. 今後作成する新Phase 3〜5
-18. 今後作成する新Design Freeze
+17. [`phase-3/30-architecture-stack.md`](phase-3/30-architecture-stack.md)
+18. [`phase-3/31-data-model-er.md`](phase-3/31-data-model-er.md)
+19. [`phase-3/32-data-rules-migrations.md`](phase-3/32-data-rules-migrations.md)
+20. [`phase-3/33-api-contracts.md`](phase-3/33-api-contracts.md)
+21. [`phase-3/34-auth-rbac-access-control.md`](phase-3/34-auth-rbac-access-control.md)
+22. [`phase-3/35-security-privacy-threat-model.md`](phase-3/35-security-privacy-threat-model.md)
+23. [`phase-3/36-operations-deployment-recovery.md`](phase-3/36-operations-deployment-recovery.md)
+24. [`phase-3/37-decisions-traceability.md`](phase-3/37-decisions-traceability.md)
+25. 今後作成する新Phase 4〜5
+26. 今後作成する新Design Freeze
 
 ## Phase 0文書
 
@@ -57,6 +65,19 @@
 | [`phase-2/23-ai-contracts-state-transitions.md`](phase-2/23-ai-contracts-state-transitions.md) | AI入出力契約、状態遷移、提案採否、監査証跡 |
 | [`phase-2/24-one-on-one-continuous-support.md`](phase-2/24-one-on-one-continuous-support.md) | 1on1、進捗、通知、目標変更、例外処理 |
 | [`phase-2/25-poc-evaluation-cost.md`](phase-2/25-poc-evaluation-cost.md) | PoC、品質基準、モデル選定、月額1,000円上限 |
+
+## Phase 3文書
+
+| 文書 | 目的 |
+|---|---|
+| [`phase-3/30-architecture-stack.md`](phase-3/30-architecture-stack.md) | Workers上のNext.js単一構成、D1/R2/AI/Gmail、環境境界 |
+| [`phase-3/31-data-model-er.md`](phase-3/31-data-model-er.md) | Identity、Member、目標、1on1、AI、共有、監査のERとtable |
+| [`phase-3/32-data-rules-migrations.md`](phase-3/32-data-rules-migrations.md) | transaction、整合性、計算、競合、migration |
+| [`phase-3/33-api-contracts.md`](phase-3/33-api-contracts.md) | REST API、error、AI preview/approve、share endpoint |
+| [`phase-3/34-auth-rbac-access-control.md`](phase-3/34-auth-rbac-access-control.md) | Access JWT、RBAC、Unit scope、機密ACL、CSRF |
+| [`phase-3/35-security-privacy-threat-model.md`](phase-3/35-security-privacy-threat-model.md) | 脅威、XSS/SQLi/IDOR、Secret、AI・監査・incident |
+| [`phase-3/36-operations-deployment-recovery.md`](phase-3/36-operations-deployment-recovery.md) | CI/CD、通知、backup、復旧、監視、費用guardrail |
+| [`phase-3/37-decisions-traceability.md`](phase-3/37-decisions-traceability.md) | 技術決定、要件対応、残余risk、Phase 3完了判定 |
 
 ## 旧文書
 
