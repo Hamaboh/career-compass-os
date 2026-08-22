@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { authenticate } from "../src/lib/auth/authenticate";
 import {
+  capabilitiesFor,
+  hasGlobalUnitAccess,
+} from "../src/lib/auth/capabilities";
+import {
   recordAccessChange,
   type AuditEvent,
   type AuditWriter,
@@ -13,6 +17,10 @@ import {
 import { authorize, repositoryUnitScope } from "../src/lib/auth/policy";
 import type { AppUserRepository } from "../src/lib/auth/repository";
 import type { AppUserIdentity, Principal, Role } from "../src/lib/auth/types";
+import {
+  AuthenticationConfigurationError,
+  createAccessJwtVerifier,
+} from "../src/lib/auth/verifier-factory";
 
 const now = new Date("2026-08-22T12:00:00.000Z");
 const issuer = "https://synthetic.cloudflareaccess.invalid";
@@ -105,30 +113,113 @@ describe("Access authentication boundary", () => {
     expect(second.principal.roles).toEqual(["EXECUTIVE"]);
     expect(second.principal.globalUnitRead).toBe(true);
   });
+  it.each([
+    ["missing", []],
+    [
+      "expired",
+      [
+        {
+          unitId: "unit-a",
+          validFrom: "2026-01-01T00:00:00.000Z",
+          validTo: "2026-08-22T11:59:59.000Z",
+        },
+      ],
+    ],
+    [
+      "not started",
+      [
+        {
+          unitId: "unit-a",
+          validFrom: "2026-08-22T12:00:01.000Z",
+          validTo: null,
+        },
+      ],
+    ],
+  ] as const)(
+    "rejects a scoped UL whose scope is %s",
+    async (_state, unitScopes) => {
+      await expect(
+        authenticate(
+          request(token()),
+          verifier(),
+          new Users({ ...user(), unitScopes: [...unitScopes] }),
+          now,
+        ),
+      ).rejects.toMatchObject({ status: 403, reason: "unit_scope_required" });
+    },
+  );
+  it.each(["EXECUTIVE", "SYSTEM_ADMIN"] as const)(
+    "allows global %s without a Unit scope",
+    async (role) => {
+      const result = await authenticate(
+        request(token()),
+        verifier(),
+        new Users({ ...user([role]), unitScopes: [] }),
+        now,
+      );
+      expect(result.principal.globalUnitRead).toBe(true);
+    },
+  );
+  it("allows a composite UL and EXECUTIVE without a Unit scope based on global capability", async () => {
+    const result = await authenticate(
+      request(token()),
+      verifier(),
+      new Users({ ...user(["UL", "EXECUTIVE"]), unitScopes: [] }),
+      now,
+    );
+    expect(result.principal.globalUnitRead).toBe(true);
+  });
+  it("rejects fake authentication in production without exposing configuration", () => {
+    expect(() =>
+      createAccessJwtVerifier({
+        APP_ENV: "production",
+        AUTH_MODE: "fake",
+        ACCESS_ISSUER: issuer,
+        ACCESS_AUDIENCE: audience,
+      }),
+    ).toThrow(AuthenticationConfigurationError);
+    try {
+      createAccessJwtVerifier({
+        APP_ENV: "production",
+        AUTH_MODE: "fake",
+        ACCESS_ISSUER: issuer,
+        ACCESS_AUDIENCE: audience,
+      });
+    } catch (error) {
+      expect(String(error)).not.toContain(issuer);
+      expect(String(error)).not.toContain(audience);
+    }
+  });
+  it.each(["local", "ci", "preview"] as const)(
+    "permits explicitly configured fake authentication in %s",
+    (APP_ENV) => {
+      expect(
+        createAccessJwtVerifier({
+          APP_ENV,
+          AUTH_MODE: "fake",
+          ACCESS_ISSUER: issuer,
+          ACCESS_AUDIENCE: audience,
+        }),
+      ).toBeInstanceOf(FakeAccessJwtVerifier);
+    },
+  );
 });
 
-function principal(role: Role, unitScopes = ["unit-a"]): Principal {
-  const map = {
-    SYSTEM_ADMIN: [
-      "PROFILE_READ",
-      "UNIT_READ_ALL",
-      "BUSINESS_EDIT_MAINTENANCE",
-    ],
-    EXECUTIVE: ["PROFILE_READ", "UNIT_READ_ALL"],
-    UL: ["PROFILE_READ", "UNIT_READ_SCOPED", "UNIT_EDIT_SCOPED"],
-  } as const;
+function principal(role: Role | Role[], unitScopes = ["unit-a"]): Principal {
+  const actorRoles = Array.isArray(role) ? role : [role];
+  const capabilities = capabilitiesFor(actorRoles);
   return {
-    actorId: `actor-${role}`,
+    actorId: `actor-${actorRoles.join("-")}`,
     accessSubject: "subject",
     status: "ACTIVE",
-    roles: [role],
-    capabilities: [...map[role]],
+    roles: actorRoles,
+    capabilities,
     unitScopes: unitScopes.map((unitId) => ({
       unitId,
       validFrom: now.toISOString(),
       validTo: null,
     })),
-    globalUnitRead: role !== "UL",
+    globalUnitRead: hasGlobalUnitAccess(capabilities),
     createdAt: now.toISOString(),
   };
 }
@@ -216,27 +307,37 @@ describe("central authorization policy", () => {
       unitIds: ["unit-a"],
     });
   });
-  it("does not include expired unit scopes in a freshly loaded principal", async () => {
-    const expired = { ...user(), unitScopes: [] };
-    const result = await authenticate(
-      request(token()),
-      verifier(),
-      new Users(expired),
-      now,
-    );
-    await expect(
-      authorize(
-        result.principal,
+  it.each([
+    ["EXECUTIVE", "UL"],
+    ["SYSTEM_ADMIN", "UL"],
+  ] as Role[][])(
+    "does not let composite global role %s bypass scoped writes",
+    async (...roles) => {
+      const actor = principal(roles, ["unit-a"]);
+      await authorize(
+        actor,
         {
-          capability: "UNIT_READ_SCOPED",
+          capability: "UNIT_EDIT_SCOPED",
           resourceUnitId: "unit-a",
           targetType: "unit",
         },
         new Audit(),
-        "request_expired",
-      ),
-    ).rejects.toMatchObject({ status: 403 });
-  });
+        "request_own_write",
+      );
+      await expect(
+        authorize(
+          actor,
+          {
+            capability: "UNIT_EDIT_SCOPED",
+            resourceUnitId: "unit-b",
+            targetType: "unit",
+          },
+          new Audit(),
+          "request_cross_write",
+        ),
+      ).rejects.toMatchObject({ status: 403, reason: "unit_scope_denied" });
+    },
+  );
   it("requires a maintenance reason and audits an allowed bypass", async () => {
     const audit = new Audit();
     const admin = principal("SYSTEM_ADMIN");
@@ -245,19 +346,30 @@ describe("central authorization policy", () => {
         admin,
         {
           capability: "BUSINESS_EDIT_MAINTENANCE",
-          maintenanceBypass: true,
           targetType: "record",
         },
         audit,
         "request_no_reason",
       ),
     ).rejects.toMatchObject({ code: "MAINTENANCE_REASON_REQUIRED" });
+    await expect(
+      authorize(
+        admin,
+        {
+          capability: "BUSINESS_EDIT_MAINTENANCE",
+          maintenanceReason: "   ",
+          targetType: "record",
+        },
+        audit,
+        "request_blank_reason",
+      ),
+    ).rejects.toMatchObject({ code: "MAINTENANCE_REASON_REQUIRED" });
     await authorize(
       admin,
       {
         capability: "BUSINESS_EDIT_MAINTENANCE",
-        maintenanceBypass: true,
         maintenanceReason: "synthetic recovery check",
+        resourceUnitId: "unit-outside-admin-scope",
         targetType: "record",
         targetId: "record-1",
       },

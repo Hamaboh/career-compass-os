@@ -73,6 +73,12 @@ describe("GET /api/v1/me integration", () => {
     ["invalid JWT", active, "sensitive.jwt.value", 401],
     ["unregistered", null, jwt, 403],
     ["inactive", { ...active, status: "SUSPENDED" as const }, jwt, 403],
+    [
+      "UL without scope",
+      { ...active, unitScopes: [] as AppUserIdentity["unitScopes"] },
+      jwt,
+      403,
+    ],
   ] as const)(
     "returns a safe envelope for %s",
     async (_name, identity, tokenValue, status) => {

@@ -1,6 +1,7 @@
 import { AuthError } from "./errors";
 import type { AuditWriter } from "./audit";
 import type { Capability, Principal } from "./types";
+import { capabilityAllowsGlobalUnitScope } from "./capabilities";
 
 export interface AuthorizationRequest {
   capability: Capability;
@@ -9,7 +10,6 @@ export interface AuthorizationRequest {
   confidentiality?: "NORMAL" | "CONFIDENTIAL";
   recordAclActorIds?: string[];
   resourceStateAllows?: boolean;
-  maintenanceBypass?: boolean;
   maintenanceReason?: string;
   targetType: string;
   targetId?: string;
@@ -21,12 +21,18 @@ export async function authorize(
   audit: AuditWriter,
   requestId: string,
 ): Promise<void> {
+  const maintenanceOperation =
+    request.capability === "BUSINESS_EDIT_MAINTENANCE";
+  const capabilityAllowsUnitBypass =
+    maintenanceOperation ||
+    (principal.globalUnitRead &&
+      capabilityAllowsGlobalUnitScope(request.capability));
   let denial: AuthError | undefined;
   if (!principal.capabilities.includes(request.capability))
     denial = new AuthError("CAPABILITY_FORBIDDEN", 403, "capability_missing");
   else if (
     request.resourceUnitId &&
-    !principal.globalUnitRead &&
+    !capabilityAllowsUnitBypass &&
     !principal.unitScopes.some(
       (scope) => scope.unitId === request.resourceUnitId,
     )
@@ -47,7 +53,7 @@ export async function authorize(
       403,
       "resource_state_denied",
     );
-  if (request.maintenanceBypass && !request.maintenanceReason?.trim())
+  if (maintenanceOperation && !request.maintenanceReason?.trim())
     denial = new AuthError(
       "MAINTENANCE_REASON_REQUIRED",
       403,
@@ -66,7 +72,7 @@ export async function authorize(
     });
     throw denial;
   }
-  if (request.maintenanceBypass)
+  if (maintenanceOperation)
     await audit.write({
       eventType: "MAINTENANCE_BYPASS",
       occurredAt: new Date().toISOString(),

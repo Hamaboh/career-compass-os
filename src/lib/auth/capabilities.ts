@@ -22,3 +22,19 @@ const roleCapabilities: Record<Role, readonly Capability[]> = {
 export function capabilitiesFor(roles: Role[]): Capability[] {
   return [...new Set(roles.flatMap((role) => roleCapabilities[role]))];
 }
+
+const globalUnitCapabilities = new Set<Capability>([
+  "UNIT_READ_ALL",
+  "REVIEW_ALL",
+  "AUDIT_READ_ALL",
+]);
+
+export function capabilityAllowsGlobalUnitScope(
+  capability: Capability,
+): boolean {
+  return globalUnitCapabilities.has(capability);
+}
+
+export function hasGlobalUnitAccess(capabilities: Capability[]): boolean {
+  return capabilities.includes("UNIT_READ_ALL");
+}

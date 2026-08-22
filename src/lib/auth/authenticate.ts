@@ -1,5 +1,5 @@
 import { AuthError } from "./errors";
-import { capabilitiesFor } from "./capabilities";
+import { capabilitiesFor, hasGlobalUnitAccess } from "./capabilities";
 import type { AccessJwtVerifier, Principal } from "./types";
 import type { AppUserRepository } from "./repository";
 
@@ -34,6 +34,14 @@ export async function authenticate(
   const capabilities = capabilitiesFor(user.roles);
   if (!capabilities.includes("PROFILE_READ"))
     throw new AuthError("CAPABILITY_FORBIDDEN", 403, "capability_missing");
+  const unitScopes = user.unitScopes.filter((scope) => {
+    const validFrom = new Date(scope.validFrom);
+    const validTo = scope.validTo ? new Date(scope.validTo) : null;
+    return validFrom <= now && (!validTo || validTo > now);
+  });
+  const globalUnitRead = hasGlobalUnitAccess(capabilities);
+  if (!globalUnitRead && unitScopes.length === 0)
+    throw new AuthError("APP_USER_FORBIDDEN", 403, "unit_scope_required");
   return {
     principal: {
       actorId: user.id,
@@ -41,10 +49,8 @@ export async function authenticate(
       status: "ACTIVE",
       roles: user.roles,
       capabilities,
-      unitScopes: user.unitScopes,
-      globalUnitRead: user.roles.some(
-        (role) => role === "SYSTEM_ADMIN" || role === "EXECUTIVE",
-      ),
+      unitScopes,
+      globalUnitRead,
       createdAt: now.toISOString(),
     },
     profile: { displayName: user.displayName },
