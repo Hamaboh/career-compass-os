@@ -1,0 +1,55 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "career-compass-os-local",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "vars": { "APP_ENV": "local" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "career-compass-local",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_FILES",
+      "bucket_name": "career-compass-local-private",
+    },
+  ],
+  "env": {
+    "preview": {
+      "name": "career-compass-os-preview",
+      "vars": { "APP_ENV": "preview" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "career-compass-preview",
+          "database_id": "00000000-0000-0000-0000-000000000002",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PRIVATE_FILES",
+          "bucket_name": "career-compass-preview-private",
+        },
+      ],
+    },
+    "production": {
+      "name": "career-compass-os-production",
+      "vars": { "APP_ENV": "production" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "REPLACE_IN_PLATFORM",
+          "database_id": "REPLACE_IN_PLATFORM",
+        },
+      ],
+      "r2_buckets": [
+        { "binding": "PRIVATE_FILES", "bucket_name": "REPLACE_IN_PLATFORM" },
+      ],
+    },
+  },
+}
