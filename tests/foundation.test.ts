@@ -9,7 +9,14 @@ import { contentSecurityPolicy } from "../src/lib/security-headers";
 describe("foundation boundaries", () => {
   it("validates isolated environments", () => {
     for (const APP_ENV of ["local", "ci", "preview", "production"] as const) {
-      expect(parseEnvironment({ APP_ENV }).APP_ENV).toBe(APP_ENV);
+      expect(
+        parseEnvironment({
+          APP_ENV,
+          AUTH_MODE: APP_ENV === "production" ? "cloudflare-access" : "fake",
+          ACCESS_ISSUER: "https://synthetic.cloudflareaccess.invalid",
+          ACCESS_AUDIENCE: `career-compass-${APP_ENV}`,
+        }).APP_ENV,
+      ).toBe(APP_ENV);
     }
     expect(() => parseEnvironment({})).toThrow();
     expect(() => parseEnvironment({ APP_ENV: "staging" })).toThrow();
