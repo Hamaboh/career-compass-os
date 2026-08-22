@@ -1,5 +1,15 @@
 export interface ErrorEnvelope {
-  error: { code: string; message: string; requestId: string };
+  error: {
+    code: string;
+    message: string;
+    fieldErrors?: FieldError[];
+  };
+  requestId: string;
+}
+
+export interface FieldError {
+  field: string;
+  message: string;
 }
 
 export function createRequestId(headerValue?: string | null): string {
@@ -13,9 +23,15 @@ export function errorEnvelope(
   code: string,
   requestId: string,
   status = 500,
+  fieldErrors?: FieldError[],
 ): Response {
   const body: ErrorEnvelope = {
-    error: { code, message: "リクエストを完了できませんでした。", requestId },
+    error: {
+      code,
+      message: "リクエストを完了できませんでした。",
+      ...(fieldErrors === undefined ? {} : { fieldErrors }),
+    },
+    requestId,
   };
   return Response.json(body, {
     status,

@@ -16,6 +16,11 @@ done
 grep -qi '^HTTP/1.1 200' /tmp/career-compass-health.headers
 grep -qi '^x-request-id:' /tmp/career-compass-health.headers
 grep -qi '^content-security-policy:' /tmp/career-compass-health.headers
+if grep -i '^content-security-policy:' /tmp/career-compass-health.headers | grep -Eq "'unsafe-(inline|eval)'"; then
+  echo "Production preview CSP contains an unsafe source" >&2
+  exit 1
+fi
+grep -i '^content-security-policy:' /tmp/career-compass-health.headers | grep -Eq "script-src[^;]*'nonce-[^']+'"
 grep -qi '^x-content-type-options: nosniff' /tmp/career-compass-health.headers
 grep -qi '^cache-control: no-store' /tmp/career-compass-health.headers
 grep -q '"status":"ok"' /tmp/career-compass-health.body
