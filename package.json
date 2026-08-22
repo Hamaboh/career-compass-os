@@ -17,6 +17,8 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run tests/auth-integration.test.ts",
+    "test:migration": "rm -rf .wrangler/state && wrangler d1 migrations apply career-compass-local --local",
     "audit": "pnpm audit --audit-level=high"
   },
   "dependencies": {

@@ -14,6 +14,9 @@ const disabledAi: AiBinding = {
 export function createFakeBindings(): AppBindings {
   return {
     APP_ENV: "ci",
+    AUTH_MODE: "fake",
+    ACCESS_ISSUER: "https://synthetic.cloudflareaccess.invalid",
+    ACCESS_AUDIENCE: "career-compass-ci",
     DB: {
       prepare: () => {
         throw new Error("Fake D1 does not execute queries");
