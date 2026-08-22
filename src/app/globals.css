@@ -31,3 +31,49 @@ header {
   outline: 3px solid #ffb000;
   outline-offset: 3px;
 }
+label {
+  display: block;
+  font-weight: 700;
+  margin-top: 1rem;
+}
+input,
+select,
+button,
+.button {
+  min-height: 44px;
+  padding: 0.65rem;
+  font: inherit;
+}
+button,
+.button {
+  background: #173f78;
+  color: #fff;
+  border: 0;
+  border-radius: 0.35rem;
+  display: inline-block;
+  text-decoration: none;
+  margin-top: 1rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid #ccd4e0;
+  padding: 0.75rem;
+}
+.status {
+  border: 2px solid #365b3c;
+  border-radius: 1rem;
+  padding: 0.15rem 0.5rem;
+  font-weight: 700;
+}
+.form {
+  max-width: 40rem;
+}
+.form input {
+  width: 100%;
+}
