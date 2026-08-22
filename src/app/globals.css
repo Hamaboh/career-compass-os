@@ -1,0 +1,33 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  background: #f6f8fb;
+  color: #172033;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header,
+main {
+  max-width: 64rem;
+  margin: auto;
+  padding: 1.5rem;
+}
+header {
+  background: #14213d;
+  color: white;
+  max-width: none;
+}
+.panel {
+  background: white;
+  border: 1px solid #ccd4e0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+:focus-visible {
+  outline: 3px solid #ffb000;
+  outline-offset: 3px;
+}

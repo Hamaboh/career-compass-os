@@ -1,0 +1,48 @@
+{
+  "name": "career-compass-os",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": "22.22.0"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "preview:smoke": "bash scripts/preview-smoke.sh",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "audit": "pnpm audit --audit-level=high"
+  },
+  "dependencies": {
+    "next": "15.5.23",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260820.1",
+    "@eslint/eslintrc": "3.3.1",
+    "@opennextjs/cloudflare": "1.20.2",
+    "@types/node": "22.18.3",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "eslint": "9.35.0",
+    "eslint-config-next": "15.5.23",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "vitest": "3.2.6",
+    "wrangler": "4.125.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.23",
+      "sharp": "0.35.0"
+    }
+  }
+}

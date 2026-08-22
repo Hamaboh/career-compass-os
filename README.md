@@ -4,7 +4,15 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**です。コード実装はまだ開始していません。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0のrepository foundationを実装済みです。認証、業務、AI、mail、production接続は未実装です。
+
+## 開発・検証
+
+Node.js `22.22.0`とpnpm `10.28.1`を使用します。`corepack enable`後、`pnpm install --frozen-lockfile`で導入し、`pnpm dev`で起動します。`.env.example`は非Secretの説明だけを持ち、実値はCloudflare/GitHubのSecret storeで管理します。本番dataをlocal/CI/previewへコピーしてはいけません。
+
+`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm build:cloudflare`、`pnpm audit --audit-level=high`が標準検証です。`pnpm preview:smoke`はlocal Workersでhealth、request ID、security headerを検証します。local D1/R2 stateとbuild/cacheはGit管理しません。
+
+PRではclean install、上記検証、secret scanを必須とします。previewはpreview専用bindingだけを使います。Production resource作成・deploymentはI0対象外です。rollbackはbindingを確認して直前のreview済みWorkers versionへ`wrangler rollback`するか、直前のreview済みcommitを再deployします。I0にmigrationはありません。詳細は[ADR-0008](docs/decisions/0008-implementation-0-runtime-versions.md)を参照してください。
 
 旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 0〜5と新Design Freezeを正式仕様とします。
 
@@ -26,15 +34,15 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 新設計の進行
 
-| Phase | 内容 | 状態 |
-|---|---|---|
-| Phase 0 | 一次資料、決定事項、用語、制度ルール、旧仕様失効範囲 | 完了 |
-| Phase 1 | プロダクト、業務、要件、MVP | 完了 |
-| Phase 2 | AIロジック、匿名化、Prompt契約、評価・費用統制 | 完了 |
-| Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用 | 完了 |
-| Phase 4 | UI/UX、テスト、実装計画 | 完了 |
-| Phase 5 | 最終レビュー、トレーサビリティ、新Design Freeze | 完了 |
-| AI PoC | 低価格モデルの品質・安全性・費用比較 | 実AI接続前に実施 |
+| Phase   | 内容                                                 | 状態             |
+| ------- | ---------------------------------------------------- | ---------------- |
+| Phase 0 | 一次資料、決定事項、用語、制度ルール、旧仕様失効範囲 | 完了             |
+| Phase 1 | プロダクト、業務、要件、MVP                          | 完了             |
+| Phase 2 | AIロジック、匿名化、Prompt契約、評価・費用統制       | 完了             |
+| Phase 3 | 技術、データ、API、認証認可、セキュリティ、運用      | 完了             |
+| Phase 4 | UI/UX、テスト、実装計画                              | 完了             |
+| Phase 5 | 最終レビュー、トレーサビリティ、新Design Freeze      | 完了             |
+| AI PoC  | 低価格モデルの品質・安全性・費用比較                 | 実AI接続前に実施 |
 
 ## Phase 0の読順
 
