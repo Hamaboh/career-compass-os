@@ -8,6 +8,8 @@ import {
 } from "../src/lib/member/schemas";
 import { assertMutationRequest } from "../src/lib/member/security";
 import { MemberError } from "../src/lib/member/errors";
+import { MemberService } from "../src/lib/member/service";
+import type { D1MemberRepository } from "../src/lib/member/repository";
 import { authorize } from "../src/lib/auth/policy";
 import {
   capabilitiesFor,
@@ -235,5 +237,41 @@ describe("I2 authorization matrix", () => {
         "composite",
       ),
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("failed history audit boundary", () => {
+  it("does not write a success audit when the atomic repository operation fails", async () => {
+    const audit = new Audit();
+    const p = principal(["UL"]);
+    const repo = {
+      findMember: async () => ({
+        id: "00000000-0000-4000-8000-000000000020",
+        primaryUnitId: p.unitScopes[0]!.unitId,
+      }),
+      addStatusHistory: async () => {
+        throw new MemberError("PERIOD_CONFLICT", 409, "history_conflict");
+      },
+    } as unknown as D1MemberRepository;
+    const service = new MemberService(repo, audit);
+
+    await expect(
+      service.statusHistory(
+        p,
+        "00000000-0000-4000-8000-000000000020",
+        {
+          status: "LEFT",
+          startedOn: "2026-03-01",
+          reasonCode: "SYN_LEFT",
+          version: 1,
+        },
+        "request_failed_history",
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      audit.events.some(
+        (event) => event.eventType === "MEMBER_STATUS_HISTORY_ADDED",
+      ),
+    ).toBe(false);
   });
 });

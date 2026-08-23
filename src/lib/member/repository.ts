@@ -211,36 +211,59 @@ export class D1MemberRepository {
       !(await this.unitVisible(principal, input.unitId, true))
     )
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
-    const bumped = await this.bump(id, input.version, now);
-    if (!bumped)
-      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    const historyId = crypto.randomUUID();
+    let results: D1Result<unknown>[];
     try {
-      if (input.isPrimary)
-        await this.db
+      results = await this.db.batch([
+        this.db
           .prepare(
-            "UPDATE member_unit_history SET ended_on=? WHERE member_id=? AND is_primary=1 AND ended_on IS NULL AND started_on<?",
+            `INSERT INTO member_unit_history(id,member_id,unit_id,is_primary,started_on,ended_on,source,decided_by,created_at)
+             SELECT ?,m.id,?,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?`,
           )
-          .bind(input.startedOn, id, input.startedOn)
-          .run();
-      await this.db
-        .prepare(
-          `INSERT INTO member_unit_history(id,member_id,unit_id,is_primary,started_on,ended_on,source,decided_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          id,
-          input.unitId,
-          input.isPrimary ? 1 : 0,
-          input.startedOn,
-          input.endedOn ?? null,
-          input.source,
-          principal.actorId,
-          now,
-        )
-        .run();
+          .bind(
+            historyId,
+            input.unitId,
+            input.isPrimary ? 1 : 0,
+            input.startedOn,
+            input.endedOn ?? null,
+            input.source,
+            principal.actorId,
+            now,
+            id,
+            input.version,
+          ),
+        this.db
+          .prepare(
+            `UPDATE member_unit_history SET ended_on=?
+             WHERE member_id=? AND is_primary=1 AND ended_on IS NULL
+               AND started_on<? AND id<>? AND ?=1
+               AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)`,
+          )
+          .bind(
+            input.startedOn,
+            id,
+            input.startedOn,
+            historyId,
+            input.isPrimary ? 1 : 0,
+            historyId,
+          ),
+        this.db
+          .prepare(
+            `UPDATE members SET version=version+1,updated_at=?
+             WHERE id=? AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)`,
+          )
+          .bind(now, id, historyId),
+      ]);
     } catch {
+      // D1 batch is transactional: any statement error rolls the entire batch back.
+      // A zero-row conditional INSERT means the expected version no longer matched.
+      const current = await this.findMember(principal, id, true);
+      if (current && current.version !== input.version)
+        throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
       throw new MemberError("PERIOD_CONFLICT", 409, "history_conflict");
     }
+    if (!results[0]?.meta.changes)
+      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
   }
   async addStatusHistory(
@@ -257,49 +280,60 @@ export class D1MemberRepository {
   ): Promise<MemberDetail> {
     if (!(await this.findMember(principal, id, true)))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
-    if (!(await this.bump(id, input.version, now)))
-      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    const historyId = crypto.randomUUID();
+    let results: D1Result<unknown>[];
     try {
-      await this.db
-        .prepare(
-          "UPDATE member_status_history SET ended_on=? WHERE member_id=? AND ended_on IS NULL AND started_on<?",
-        )
-        .bind(input.startedOn, id, input.startedOn)
-        .run();
-      await this.db
-        .prepare(
-          `INSERT INTO member_status_history(id,member_id,status,started_on,ended_on,reason_code,decided_by,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          id,
-          input.status,
-          input.startedOn,
-          input.endedOn ?? null,
-          input.reasonCode,
-          principal.actorId,
-          now,
-        )
-        .run();
-      await this.db
-        .prepare(
-          "UPDATE members SET status=?,left_on=CASE WHEN ?='LEFT' THEN ? WHEN ?='ACTIVE' THEN NULL ELSE left_on END WHERE id=?",
-        )
-        .bind(input.status, input.status, input.startedOn, input.status, id)
-        .run();
+      results = await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO member_status_history(id,member_id,status,started_on,ended_on,reason_code,decided_by,created_at)
+             SELECT ?,m.id,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?`,
+          )
+          .bind(
+            historyId,
+            input.status,
+            input.startedOn,
+            input.endedOn ?? null,
+            input.reasonCode,
+            principal.actorId,
+            now,
+            id,
+            input.version,
+          ),
+        this.db
+          .prepare(
+            `UPDATE member_status_history SET ended_on=?
+             WHERE member_id=? AND ended_on IS NULL AND started_on<? AND id<>?
+               AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)`,
+          )
+          .bind(input.startedOn, id, input.startedOn, historyId, historyId),
+        this.db
+          .prepare(
+            `UPDATE members
+             SET status=?,
+                 left_on=CASE WHEN ?='LEFT' THEN ? WHEN ?='ACTIVE' THEN NULL ELSE left_on END,
+                 version=version+1,updated_at=?
+             WHERE id=? AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)`,
+          )
+          .bind(
+            input.status,
+            input.status,
+            input.startedOn,
+            input.status,
+            now,
+            id,
+            historyId,
+          ),
+      ]);
     } catch {
+      const current = await this.findMember(principal, id, true);
+      if (current && current.version !== input.version)
+        throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
       throw new MemberError("PERIOD_CONFLICT", 409, "history_conflict");
     }
+    if (!results[0]?.meta.changes)
+      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
-  }
-  private async bump(id: string, version: number, now: string) {
-    const r = await this.db
-      .prepare(
-        "UPDATE members SET version=version+1,updated_at=? WHERE id=? AND version=?",
-      )
-      .bind(now, id, version)
-      .run();
-    return !!r.meta.changes;
   }
 }
 function memberSummary(r: Record<string, unknown>): MemberSummary {
