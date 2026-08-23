@@ -7,7 +7,11 @@ export interface AuditEvent {
     | "APP_USER_ACTIVATED"
     | "APP_USER_DEACTIVATED"
     | "AUTHORIZATION_DENIED"
-    | "MAINTENANCE_BYPASS";
+    | "MAINTENANCE_BYPASS"
+    | "MEMBER_CREATED"
+    | "MEMBER_UPDATED"
+    | "MEMBER_UNIT_HISTORY_ADDED"
+    | "MEMBER_STATUS_HISTORY_ADDED";
   occurredAt: string;
   actorId: string | null;
   targetType: string;
