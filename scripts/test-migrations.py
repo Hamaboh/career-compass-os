@@ -71,22 +71,23 @@ def transaction(connection: sqlite3.Connection, operation: Callable[[], Any]) ->
 
 def add_unit(connection: sqlite3.Connection, history_id: str, unit_id: str, started_on: str, version: int, primary: int = 1) -> int:
     def statements() -> int:
+        connection.execute(
+            """UPDATE member_unit_history SET ended_on=?
+               WHERE member_id=? AND is_primary=1 AND ended_on IS NULL
+                 AND started_on<? AND ?=1
+                 AND EXISTS (SELECT 1 FROM members WHERE id=? AND version=?)""",
+            (started_on, MEMBER, started_on, primary, MEMBER, version),
+        )
         inserted = connection.execute(
             """INSERT INTO member_unit_history(id,member_id,unit_id,is_primary,started_on,ended_on,source,decided_by,created_at)
                SELECT ?,m.id,?,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?""",
             (history_id, unit_id, primary, started_on, None, "MANUAL", ACTOR, started_on, MEMBER, version),
         ).rowcount
         connection.execute(
-            """UPDATE member_unit_history SET ended_on=?
-               WHERE member_id=? AND is_primary=1 AND ended_on IS NULL
-                 AND started_on<? AND id<>? AND ?=1
-                 AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)""",
-            (started_on, MEMBER, started_on, history_id, primary, history_id),
-        )
-        connection.execute(
             """UPDATE members SET version=version+1,updated_at=?
-               WHERE id=? AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)""",
-            (started_on, MEMBER, history_id),
+               WHERE id=? AND version=?
+                 AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)""",
+            (started_on, MEMBER, version, history_id),
         )
         return inserted
 
@@ -95,23 +96,24 @@ def add_unit(connection: sqlite3.Connection, history_id: str, unit_id: str, star
 
 def add_status(connection: sqlite3.Connection, history_id: str, status: str, started_on: str, version: int) -> int:
     def statements() -> int:
+        connection.execute(
+            """UPDATE member_status_history SET ended_on=?
+               WHERE member_id=? AND ended_on IS NULL AND started_on<?
+                 AND EXISTS (SELECT 1 FROM members WHERE id=? AND version=?)""",
+            (started_on, MEMBER, started_on, MEMBER, version),
+        )
         inserted = connection.execute(
             """INSERT INTO member_status_history(id,member_id,status,started_on,ended_on,reason_code,decided_by,created_at)
                SELECT ?,m.id,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?""",
             (history_id, status, started_on, None, f"SYN_{status}", ACTOR, started_on, MEMBER, version),
         ).rowcount
         connection.execute(
-            """UPDATE member_status_history SET ended_on=?
-               WHERE member_id=? AND ended_on IS NULL AND started_on<? AND id<>?
-                 AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)""",
-            (started_on, MEMBER, started_on, history_id, history_id),
-        )
-        connection.execute(
             """UPDATE members
                SET status=?,left_on=CASE WHEN ?='LEFT' THEN ? WHEN ?='ACTIVE' THEN NULL ELSE left_on END,
                    version=version+1,updated_at=?
-               WHERE id=? AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)""",
-            (status, status, started_on, status, started_on, MEMBER, history_id),
+               WHERE id=? AND version=?
+                 AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)""",
+            (status, status, started_on, status, started_on, MEMBER, version, history_id),
         )
         return inserted
 
@@ -129,6 +131,27 @@ def snapshot(connection: sqlite3.Connection) -> tuple[list[tuple[Any, ...]], lis
 migrated().close()
 migrated(upgrade=True).close()
 
+# Strict database triggers reject standalone inserts that overlap an open period.
+connection = fixture()
+before = snapshot(connection)
+try:
+    connection.execute(
+        "INSERT INTO member_unit_history VALUES(?,?,?,?,?,?,?,?,?)",
+        ("standalone-primary", MEMBER, UNIT_B, 1, "2026-03-01", None, "MANUAL", ACTOR, "2026-03-01"),
+    )
+    raise AssertionError("standalone overlapping primary was accepted")
+except sqlite3.IntegrityError:
+    pass
+try:
+    connection.execute(
+        "INSERT INTO member_status_history VALUES(?,?,?,?,?,?,?,?)",
+        ("standalone-status", MEMBER, "LEFT", "2026-03-01", None, "SYN_LEFT", ACTOR, "2026-03-01"),
+    )
+    raise AssertionError("standalone overlapping status was accepted")
+except sqlite3.IntegrityError:
+    pass
+assert snapshot(connection) == before
+
 # Normal primary change applies insert, closure, and version as one unit.
 connection = fixture()
 assert add_unit(connection, "primary-new", UNIT_B, "2026-03-01", 1) == 1
@@ -136,35 +159,43 @@ assert tuple(connection.execute("SELECT ended_on FROM member_unit_history WHERE 
 assert tuple(connection.execute("SELECT unit_id,ended_on FROM member_unit_history WHERE id='primary-new'").fetchone()) == (UNIT_B, None)
 assert connection.execute("SELECT version FROM members WHERE id=?", (MEMBER,)).fetchone()[0] == 2
 
+# Same-Unit primary replacement also closes exactly the prior primary.
+connection = fixture()
+assert add_unit(connection, "primary-same-unit", UNIT_A, "2026-03-01", 1) == 1
+assert connection.execute("SELECT ended_on FROM member_unit_history WHERE id='primary-old'").fetchone()[0] == "2026-03-01"
+assert connection.execute("SELECT ended_on FROM member_unit_history WHERE id='primary-same-unit'").fetchone()[0] is None
+
+# A secondary assignment does not close or replace the primary assignment.
+connection = fixture()
+assert add_unit(connection, "secondary-new", UNIT_B, "2026-03-01", 1, primary=0) == 1
+assert connection.execute("SELECT ended_on FROM member_unit_history WHERE id='primary-old'").fetchone()[0] is None
+assert tuple(connection.execute("SELECT is_primary,ended_on FROM member_unit_history WHERE id='secondary-new'").fetchone()) == (0, None)
+assert connection.execute("SELECT version FROM members WHERE id=?", (MEMBER,)).fetchone()[0] == 2
+
 # Version mismatch inserts nothing and every aggregate/history value stays unchanged.
 before = snapshot(connection)
-assert add_unit(connection, "wrong-version", UNIT_A, "2026-04-01", 1) == 0
+assert add_unit(connection, "wrong-version", UNIT_A, "2026-04-01", 1, primary=0) == 0
 assert snapshot(connection) == before
 
-# Trigger failure rolls back: old primary stays open and version is unchanged.
+# A constraint failure after the leading close rolls the close back completely.
 connection = fixture()
-connection.execute("UPDATE member_unit_history SET started_on='2026-02-01' WHERE id='primary-old'")
-connection.execute(
-    "INSERT INTO member_unit_history VALUES(?,?,?,?,?,?,?,?,?)",
-    ("primary-historical", MEMBER, UNIT_A, 1, "2026-01-01", "2026-02-01", "MANUAL", ACTOR, "2026-01-01"),
-)
 before = snapshot(connection)
 try:
-    add_unit(connection, "primary-overlap", UNIT_B, "2026-01-15", 1)
-    raise AssertionError("overlapping primary was accepted")
+    add_unit(connection, "primary-old", UNIT_B, "2026-03-01", 1)
+    raise AssertionError("duplicate primary ID was accepted")
 except sqlite3.IntegrityError:
     pass
 assert snapshot(connection) == before
 assert connection.execute("SELECT ended_on FROM member_unit_history WHERE id='primary-old'").fetchone()[0] is None
 
-# Status trigger failure leaves open history and all member aggregate columns untouched.
+# A status constraint failure after close leaves history and aggregates untouched.
 connection = fixture()
 before = snapshot(connection)
 assert add_status(connection, "status-wrong-version", "LEFT", "2026-02-01", 9) == 0
 assert snapshot(connection) == before
 try:
-    add_status(connection, "status-invalid", "LEFT", "2026-01-01", 1)
-    raise AssertionError("overlapping status was accepted")
+    add_status(connection, "status-active", "LEFT", "2026-03-01", 1)
+    raise AssertionError("duplicate status ID was accepted")
 except sqlite3.IntegrityError:
     pass
 assert snapshot(connection) == before

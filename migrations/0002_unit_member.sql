@@ -60,8 +60,6 @@ BEGIN
     SELECT 1 FROM member_unit_history h WHERE h.member_id=NEW.member_id AND h.is_primary=1
       AND h.started_on < COALESCE(NEW.ended_on,'9999-12-31')
       AND NEW.started_on < COALESCE(h.ended_on,'9999-12-31')
-      -- A later primary assignment atomically closes the one current open period.
-      AND NOT (h.ended_on IS NULL AND h.started_on < NEW.started_on)
   ) THEN RAISE(ABORT,'member primary period conflict') END;
 END;
 
@@ -72,10 +70,6 @@ BEGIN
     SELECT 1 FROM member_unit_history h WHERE h.member_id=NEW.member_id AND h.unit_id=NEW.unit_id
       AND h.started_on < COALESCE(NEW.ended_on,'9999-12-31')
       AND NEW.started_on < COALESCE(h.ended_on,'9999-12-31')
-      AND NOT (
-        NEW.is_primary=1 AND h.is_primary=1
-        AND h.ended_on IS NULL AND h.started_on < NEW.started_on
-      )
   ) THEN RAISE(ABORT,'member unit period conflict') END;
 END;
 
@@ -86,7 +80,5 @@ BEGIN
     SELECT 1 FROM member_status_history h WHERE h.member_id=NEW.member_id
       AND h.started_on < COALESCE(NEW.ended_on,'9999-12-31')
       AND NEW.started_on < COALESCE(h.ended_on,'9999-12-31')
-      -- A later status event atomically closes the one current open period.
-      AND NOT (h.ended_on IS NULL AND h.started_on < NEW.started_on)
   ) THEN RAISE(ABORT,'member status period conflict') END;
 END;

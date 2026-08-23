@@ -217,6 +217,21 @@ export class D1MemberRepository {
       results = await this.db.batch([
         this.db
           .prepare(
+            `UPDATE member_unit_history SET ended_on=?
+             WHERE member_id=? AND is_primary=1 AND ended_on IS NULL
+               AND started_on<? AND ?=1
+               AND EXISTS (SELECT 1 FROM members WHERE id=? AND version=?)`,
+          )
+          .bind(
+            input.startedOn,
+            id,
+            input.startedOn,
+            input.isPrimary ? 1 : 0,
+            id,
+            input.version,
+          ),
+        this.db
+          .prepare(
             `INSERT INTO member_unit_history(id,member_id,unit_id,is_primary,started_on,ended_on,source,decided_by,created_at)
              SELECT ?,m.id,?,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?`,
           )
@@ -234,25 +249,11 @@ export class D1MemberRepository {
           ),
         this.db
           .prepare(
-            `UPDATE member_unit_history SET ended_on=?
-             WHERE member_id=? AND is_primary=1 AND ended_on IS NULL
-               AND started_on<? AND id<>? AND ?=1
+            `UPDATE members SET version=version+1,updated_at=?
+             WHERE id=? AND version=?
                AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)`,
           )
-          .bind(
-            input.startedOn,
-            id,
-            input.startedOn,
-            historyId,
-            input.isPrimary ? 1 : 0,
-            historyId,
-          ),
-        this.db
-          .prepare(
-            `UPDATE members SET version=version+1,updated_at=?
-             WHERE id=? AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)`,
-          )
-          .bind(now, id, historyId),
+          .bind(now, id, input.version, historyId),
       ]);
     } catch {
       // D1 batch is transactional: any statement error rolls the entire batch back.
@@ -262,7 +263,7 @@ export class D1MemberRepository {
         throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
       throw new MemberError("PERIOD_CONFLICT", 409, "history_conflict");
     }
-    if (!results[0]?.meta.changes)
+    if (!results[1]?.meta.changes)
       throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
   }
@@ -286,6 +287,13 @@ export class D1MemberRepository {
       results = await this.db.batch([
         this.db
           .prepare(
+            `UPDATE member_status_history SET ended_on=?
+             WHERE member_id=? AND ended_on IS NULL AND started_on<?
+               AND EXISTS (SELECT 1 FROM members WHERE id=? AND version=?)`,
+          )
+          .bind(input.startedOn, id, input.startedOn, id, input.version),
+        this.db
+          .prepare(
             `INSERT INTO member_status_history(id,member_id,status,started_on,ended_on,reason_code,decided_by,created_at)
              SELECT ?,m.id,?,?,?,?,?,? FROM members m WHERE m.id=? AND m.version=?`,
           )
@@ -302,18 +310,12 @@ export class D1MemberRepository {
           ),
         this.db
           .prepare(
-            `UPDATE member_status_history SET ended_on=?
-             WHERE member_id=? AND ended_on IS NULL AND started_on<? AND id<>?
-               AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)`,
-          )
-          .bind(input.startedOn, id, input.startedOn, historyId, historyId),
-        this.db
-          .prepare(
             `UPDATE members
              SET status=?,
                  left_on=CASE WHEN ?='LEFT' THEN ? WHEN ?='ACTIVE' THEN NULL ELSE left_on END,
                  version=version+1,updated_at=?
-             WHERE id=? AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)`,
+             WHERE id=? AND version=?
+               AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)`,
           )
           .bind(
             input.status,
@@ -322,6 +324,7 @@ export class D1MemberRepository {
             input.status,
             now,
             id,
+            input.version,
             historyId,
           ),
       ]);
@@ -331,7 +334,7 @@ export class D1MemberRepository {
         throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
       throw new MemberError("PERIOD_CONFLICT", 409, "history_conflict");
     }
-    if (!results[0]?.meta.changes)
+    if (!results[1]?.meta.changes)
       throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
   }
