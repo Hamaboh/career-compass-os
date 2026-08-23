@@ -126,6 +126,7 @@ export class D1MemberRepository {
     },
     unitId: string,
     now: string,
+    requestId: string,
   ): Promise<MemberDetail> {
     if (!(await this.unitVisible(principal, unitId, true)))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "unit_not_visible");
@@ -163,6 +164,13 @@ export class D1MemberRepository {
             `INSERT INTO member_status_history(id,member_id,status,started_on,reason_code,decided_by,created_at) VALUES(?,?,'ACTIVE',?,'JOINED',?,?)`,
           )
           .bind(sh, id, input.joinedOn, principal.actorId, now),
+        this.successAudit(
+          "MEMBER_CREATED",
+          principal.actorId,
+          id,
+          requestId,
+          now,
+        ),
       ]);
     } catch {
       throw new MemberError("DATA_CONFLICT", 409, "history_conflict");
@@ -174,22 +182,36 @@ export class D1MemberRepository {
     id: string,
     input: { displayName?: string; employeeRef?: string; version: number },
     now: string,
+    requestId: string,
   ): Promise<MemberDetail> {
     if (!(await this.findMember(principal, id, true)))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
-    const result = await this.db
-      .prepare(
-        `UPDATE members SET display_name=COALESCE(?,display_name),employee_ref=COALESCE(?,employee_ref),version=version+1,updated_at=? WHERE id=? AND version=?`,
-      )
-      .bind(
-        input.displayName ?? null,
-        input.employeeRef ?? null,
-        now,
-        id,
-        input.version,
-      )
-      .run();
-    if (!result.meta.changes)
+    let results: D1Result<unknown>[];
+    try {
+      results = await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE members SET display_name=COALESCE(?,display_name),employee_ref=COALESCE(?,employee_ref),version=version+1,updated_at=? WHERE id=? AND version=?`,
+          )
+          .bind(
+            input.displayName ?? null,
+            input.employeeRef ?? null,
+            now,
+            id,
+            input.version,
+          ),
+        this.successAudit(
+          "MEMBER_UPDATED",
+          principal.actorId,
+          id,
+          requestId,
+          now,
+        ),
+      ]);
+    } catch {
+      throw new MemberError("DATA_CONFLICT", 409, "member_data_conflict");
+    }
+    if (!results[0]?.meta.changes)
       throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
   }
@@ -205,6 +227,7 @@ export class D1MemberRepository {
       version: number;
     },
     now: string,
+    requestId: string,
   ): Promise<MemberDetail> {
     if (
       !(await this.findMember(principal, id, true)) ||
@@ -254,6 +277,13 @@ export class D1MemberRepository {
                AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)`,
           )
           .bind(now, id, input.version, historyId),
+        this.successAudit(
+          "MEMBER_UNIT_HISTORY_ADDED",
+          principal.actorId,
+          id,
+          requestId,
+          now,
+        ),
       ]);
     } catch {
       // D1 batch is transactional: any statement error rolls the entire batch back.
@@ -278,6 +308,7 @@ export class D1MemberRepository {
       version: number;
     },
     now: string,
+    requestId: string,
   ): Promise<MemberDetail> {
     if (!(await this.findMember(principal, id, true)))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
@@ -327,6 +358,13 @@ export class D1MemberRepository {
             input.version,
             historyId,
           ),
+        this.successAudit(
+          "MEMBER_STATUS_HISTORY_ADDED",
+          principal.actorId,
+          id,
+          requestId,
+          now,
+        ),
       ]);
     } catch {
       const current = await this.findMember(principal, id, true);
@@ -337,6 +375,27 @@ export class D1MemberRepository {
     if (!results[1]?.meta.changes)
       throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     return (await this.findMember(principal, id, true))!;
+  }
+  private successAudit(
+    eventType: string,
+    actorId: string,
+    targetId: string,
+    requestId: string,
+    occurredAt: string,
+  ) {
+    return this.db
+      .prepare(
+        `INSERT INTO audit_events(id,event_type,occurred_at,actor_id,target_type,target_id,outcome,reason,request_id,metadata_json)
+         SELECT ?,?,?,?,'member',?,'SUCCEEDED','operation_succeeded',?,'{}' WHERE changes()=1`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        eventType,
+        occurredAt,
+        actorId,
+        targetId,
+        requestId,
+      );
   }
 }
 function memberSummary(r: Record<string, unknown>): MemberSummary {

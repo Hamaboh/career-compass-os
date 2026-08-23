@@ -69,6 +69,14 @@ def transaction(connection: sqlite3.Connection, operation: Callable[[], Any]) ->
         raise
 
 
+def success_audit(connection: sqlite3.Connection, event_type: str, target_id: str, request_id: str, occurred_at: str) -> None:
+    connection.execute(
+        """INSERT INTO audit_events(id,event_type,occurred_at,actor_id,target_type,target_id,outcome,reason,request_id,metadata_json)
+           SELECT ?,?,?,?,'member',?,'SUCCEEDED','operation_succeeded',?,'{}' WHERE changes()=1""",
+        (f"audit-{request_id}", event_type, occurred_at, ACTOR, target_id, request_id),
+    )
+
+
 def add_unit(connection: sqlite3.Connection, history_id: str, unit_id: str, started_on: str, version: int, primary: int = 1) -> int:
     def statements() -> int:
         connection.execute(
@@ -89,6 +97,7 @@ def add_unit(connection: sqlite3.Connection, history_id: str, unit_id: str, star
                  AND EXISTS (SELECT 1 FROM member_unit_history WHERE id=?)""",
             (started_on, MEMBER, version, history_id),
         )
+        success_audit(connection, "MEMBER_UNIT_HISTORY_ADDED", MEMBER, history_id, started_on)
         return inserted
 
     return transaction(connection, statements)
@@ -115,9 +124,41 @@ def add_status(connection: sqlite3.Connection, history_id: str, status: str, sta
                  AND EXISTS (SELECT 1 FROM member_status_history WHERE id=?)""",
             (status, status, started_on, status, started_on, MEMBER, version, history_id),
         )
+        success_audit(connection, "MEMBER_STATUS_HISTORY_ADDED", MEMBER, history_id, started_on)
         return inserted
 
     return transaction(connection, statements)
+
+
+def patch_member(connection: sqlite3.Connection, employee_ref: str, version: int, request_id: str) -> int:
+    def statements() -> int:
+        changed = connection.execute(
+            "UPDATE members SET employee_ref=?,version=version+1,updated_at='2026-05-01' WHERE id=? AND version=?",
+            (employee_ref, MEMBER, version),
+        ).rowcount
+        success_audit(connection, "MEMBER_UPDATED", MEMBER, request_id, "2026-05-01")
+        return changed
+
+    return transaction(connection, statements)
+
+
+def create_member(connection: sqlite3.Connection, member_id: str, request_id: str) -> None:
+    def statements() -> None:
+        connection.execute(
+            "INSERT INTO members(id,employee_ref,display_name,status,joined_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            (member_id, f"REF-{request_id}", "Synthetic Created", "ACTIVE", "2026-01-01", "2026-01-01", "2026-01-01"),
+        )
+        connection.execute(
+            "INSERT INTO member_unit_history VALUES(?,?,?,?,?,?,?,?,?)",
+            (f"unit-{request_id}", member_id, UNIT_A, 1, "2026-01-01", None, "MANUAL", ACTOR, "2026-01-01"),
+        )
+        connection.execute(
+            "INSERT INTO member_status_history VALUES(?,?,?,?,?,?,?,?)",
+            (f"status-{request_id}", member_id, "ACTIVE", "2026-01-01", None, "JOINED", ACTOR, "2026-01-01"),
+        )
+        success_audit(connection, "MEMBER_CREATED", member_id, request_id, "2026-01-01")
+
+    transaction(connection, statements)
 
 
 def snapshot(connection: sqlite3.Connection) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]], tuple[Any, ...]]:
@@ -208,5 +249,90 @@ assert add_status(connection, "status-returned", "ACTIVE", "2026-04-01", 2) == 1
 assert tuple(connection.execute("SELECT status,left_on,version FROM members WHERE id=?", (MEMBER,)).fetchone()) == ("ACTIVE", None, 3)
 assert connection.execute("SELECT ended_on FROM member_status_history WHERE id='status-left'").fetchone()[0] == "2026-04-01"
 assert connection.execute("SELECT ended_on FROM member_status_history WHERE id='status-returned'").fetchone()[0] is None
+
+# Duplicate employee_ref is a constraint conflict: record/version/audit stay unchanged.
+connection = fixture()
+other = "00000000-0000-4000-8000-000000000021"
+connection.execute(
+    "INSERT INTO members(id,employee_ref,display_name,status,joined_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+    (other, "SYN-DUPLICATE", "Synthetic Other", "ACTIVE", "2026-01-01", "2026-01-01", "2026-01-01"),
+)
+before = snapshot(connection)
+try:
+    patch_member(connection, "SYN-DUPLICATE", 1, "duplicate-ref")
+    raise AssertionError("duplicate employee_ref was accepted")
+except sqlite3.IntegrityError:
+    pass
+assert snapshot(connection) == before
+assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE request_id='duplicate-ref'").fetchone()[0] == 0
+
+# Audit failure rolls the preceding business mutation back for patch and histories.
+for operation in (
+    lambda db: patch_member(db, "SYN-CHANGED", 1, "audit-patch"),
+    lambda db: add_unit(db, "audit-unit", UNIT_B, "2026-03-01", 1),
+    lambda db: add_status(db, "audit-status", "LEFT", "2026-03-01", 1),
+):
+    connection = fixture()
+    connection.execute(
+        "CREATE TRIGGER reject_success_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END",
+    )
+    before = snapshot(connection)
+    try:
+        operation(connection)
+        raise AssertionError("business mutation survived audit failure")
+    except sqlite3.IntegrityError:
+        pass
+    assert snapshot(connection) == before
+    assert connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+
+connection = fixture()
+connection.execute(
+    "CREATE TRIGGER reject_create_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END",
+)
+created_id = "00000000-0000-4000-8000-000000000099"
+try:
+    create_member(connection, created_id, "audit-create")
+    raise AssertionError("create survived audit failure")
+except sqlite3.IntegrityError:
+    pass
+assert connection.execute("SELECT COUNT(*) FROM members WHERE id=?", (created_id,)).fetchone()[0] == 0
+assert connection.execute("SELECT COUNT(*) FROM member_unit_history WHERE member_id=?", (created_id,)).fetchone()[0] == 0
+assert connection.execute("SELECT COUNT(*) FROM member_status_history WHERE member_id=?", (created_id,)).fetchone()[0] == 0
+assert connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
+
+# Cursor query returns every row across 25/26/multiple-page boundaries.
+connection = fixture()
+for number in range(1, 53):
+    member_id = f"00000000-0000-4000-8000-{number:012d}"
+    if member_id == MEMBER:
+        continue
+    connection.execute(
+        "INSERT INTO members(id,employee_ref,display_name,status,joined_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        (member_id, f"PAGE-{number}", f"Page Member {number}", "ACTIVE", "2026-01-01", "2026-01-01", "2026-01-01"),
+    )
+    connection.execute(
+        "INSERT INTO member_unit_history VALUES(?,?,?,?,?,?,?,?,?)",
+        (f"page-history-{number}", member_id, UNIT_A, 1, "2026-01-01", None, "MANUAL", ACTOR, "2026-01-01"),
+    )
+
+cursor = None
+page_sizes: list[int] = []
+seen: list[str] = []
+while True:
+    rows = list(
+        connection.execute(
+            """SELECT m.id FROM members m JOIN member_unit_history h ON h.member_id=m.id AND h.is_primary=1
+               WHERE h.unit_id=? AND (? IS NULL OR m.id>?) ORDER BY m.id LIMIT 26""",
+            (UNIT_A, cursor, cursor),
+        )
+    )
+    page = rows[:25]
+    page_sizes.append(len(page))
+    seen.extend(row[0] for row in page)
+    if len(rows) <= 25:
+        break
+    cursor = page[-1][0]
+assert page_sizes == [25, 25, 2]
+assert len(seen) == len(set(seen)) == 52
 
 print("empty, I1-upgrade, and atomic history integration checks passed")

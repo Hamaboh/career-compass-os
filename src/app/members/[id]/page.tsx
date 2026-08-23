@@ -1,6 +1,10 @@
 "use client";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import {
+  canEditMember,
+  type MemberUiPrincipal,
+} from "../../../lib/member/ui-policy";
 const csrf = () =>
   document.cookie
     .split(";")
@@ -11,7 +15,8 @@ type Unit = { id: string; name: string };
 type Detail = {
   id: string;
   displayName: string;
-  employeeRef: string;
+  employeeRef?: string;
+  primaryUnitId: string;
   status: string;
   version: number;
   unitHistories: {
@@ -33,8 +38,15 @@ export default function Detail() {
   const id = String(useParams().id),
     [data, setData] = useState<Detail | null>(null),
     [message, setMessage] = useState("読み込み中です…"),
-    [units, setUnits] = useState<Unit[]>([]);
+    [units, setUnits] = useState<Unit[]>([]),
+    [principal, setPrincipal] = useState<MemberUiPrincipal | null>(null);
   useEffect(() => {
+    void fetch("/api/v1/me").then(async (response) => {
+      if (response.ok) {
+        const envelope = (await response.json()) as { data: MemberUiPrincipal };
+        setPrincipal(envelope.data);
+      }
+    });
     void fetch("/api/v1/units").then(async (response) => {
       if (response.ok)
         setUnits(((await response.json()) as { data: Unit[] }).data);
@@ -114,6 +126,7 @@ export default function Detail() {
     } else
       setMessage("履歴を追加できませんでした。入力と権限を確認してください。");
   }
+  const editable = data ? canEditMember(principal, data.primaryUnitId) : false;
   return (
     <main id="main-content">
       <section className="panel">
@@ -123,26 +136,37 @@ export default function Detail() {
         </p>
         {data && (
           <>
-            <form className="form" onSubmit={save}>
-              <label htmlFor="name">氏名</label>
-              <input
-                id="name"
-                name="displayName"
-                defaultValue={data.displayName}
-                required
-              />
-              <label htmlFor="ref">社員照合ID（非公開）</label>
-              <input
-                id="ref"
-                name="employeeRef"
-                defaultValue={data.employeeRef}
-                required
-              />
-              <p>
-                在籍状態: <span className="status">{data.status}</span>
-              </p>
-              <button>基本情報を更新</button>
-            </form>
+            {editable ? (
+              <form className="form" onSubmit={save}>
+                <label htmlFor="name">氏名</label>
+                <input
+                  id="name"
+                  name="displayName"
+                  defaultValue={data.displayName}
+                  required
+                />
+                <label htmlFor="ref">社員照合ID（非公開）</label>
+                <input
+                  id="ref"
+                  name="employeeRef"
+                  defaultValue={data.employeeRef}
+                  required
+                />
+                <p>
+                  在籍状態: <span className="status">{data.status}</span>
+                </p>
+                <button>基本情報を更新</button>
+              </form>
+            ) : (
+              <section aria-labelledby="readonly-member">
+                <h2 id="readonly-member">基本情報</h2>
+                <p>氏名: {data.displayName}</p>
+                <p>
+                  在籍状態: <span className="status">{data.status}</span>
+                </p>
+                <p>このMemberは閲覧のみ可能です。</p>
+              </section>
+            )}
             <h2>所属履歴</h2>
             {data.unitHistories.length ? (
               <ul>
@@ -168,48 +192,66 @@ export default function Detail() {
             ) : (
               <p>状態履歴はありません。</p>
             )}
-            <h2>所属履歴を追加</h2>
-            <form className="form" onSubmit={(e) => void addHistory(e, "unit")}>
-              <label htmlFor="history-unit">Unit</label>
-              <select id="history-unit" name="unitId" required>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="assignment">所属種別</label>
-              <select id="assignment" name="assignment">
-                <option value="primary">主所属</option>
-                <option value="secondary">兼務</option>
-              </select>
-              <label htmlFor="unit-started">開始日</label>
-              <input id="unit-started" name="startedOn" type="date" required />
-              <button type="submit">所属履歴を追加</button>
-            </form>
-            <h2>状態履歴を追加</h2>
-            <form
-              className="form"
-              onSubmit={(e) => void addHistory(e, "status")}
-            >
-              <label htmlFor="member-status">状態</label>
-              <select id="member-status" name="status">
-                <option value="ACTIVE">在籍・再入社</option>
-                <option value="ON_LEAVE">休職</option>
-                <option value="LEFT">退職</option>
-                <option value="OUT_OF_SCOPE">対象外</option>
-              </select>
-              <label htmlFor="status-started">開始日</label>
-              <input
-                id="status-started"
-                name="startedOn"
-                type="date"
-                required
-              />
-              <label htmlFor="reason">理由コード</label>
-              <input id="reason" name="reasonCode" required maxLength={50} />
-              <button type="submit">状態履歴を追加</button>
-            </form>
+            {editable && (
+              <section aria-labelledby="history-mutations">
+                <h2 id="history-mutations">履歴を追加</h2>
+                <h3>所属履歴を追加</h3>
+                <form
+                  className="form"
+                  onSubmit={(e) => void addHistory(e, "unit")}
+                >
+                  <label htmlFor="history-unit">Unit</label>
+                  <select id="history-unit" name="unitId" required>
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="assignment">所属種別</label>
+                  <select id="assignment" name="assignment">
+                    <option value="primary">主所属</option>
+                    <option value="secondary">兼務</option>
+                  </select>
+                  <label htmlFor="unit-started">開始日</label>
+                  <input
+                    id="unit-started"
+                    name="startedOn"
+                    type="date"
+                    required
+                  />
+                  <button type="submit">所属履歴を追加</button>
+                </form>
+                <h3>状態履歴を追加</h3>
+                <form
+                  className="form"
+                  onSubmit={(e) => void addHistory(e, "status")}
+                >
+                  <label htmlFor="member-status">状態</label>
+                  <select id="member-status" name="status">
+                    <option value="ACTIVE">在籍・再入社</option>
+                    <option value="ON_LEAVE">休職</option>
+                    <option value="LEFT">退職</option>
+                    <option value="OUT_OF_SCOPE">対象外</option>
+                  </select>
+                  <label htmlFor="status-started">開始日</label>
+                  <input
+                    id="status-started"
+                    name="startedOn"
+                    type="date"
+                    required
+                  />
+                  <label htmlFor="reason">理由コード</label>
+                  <input
+                    id="reason"
+                    name="reasonCode"
+                    required
+                    maxLength={50}
+                  />
+                  <button type="submit">状態履歴を追加</button>
+                </form>
+              </section>
+            )}
           </>
         )}
       </section>

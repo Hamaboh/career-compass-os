@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { memberPageUrl } from "../../lib/member/ui-policy";
 type Unit = { id: string; name: string };
 type Member = {
   id: string;
@@ -12,7 +13,10 @@ export default function Members() {
   const [units, setUnits] = useState<Unit[]>([]),
     [unit, setUnit] = useState(""),
     [members, setMembers] = useState<Member[]>([]),
-    [state, setState] = useState("loading");
+    [state, setState] = useState("loading"),
+    [cursor, setCursor] = useState<string | null>(null),
+    [nextCursor, setNextCursor] = useState<string | null>(null),
+    [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
   useEffect(() => {
     fetch("/api/v1/units")
       .then(async (r) => {
@@ -27,14 +31,19 @@ export default function Members() {
   useEffect(() => {
     if (!unit) return;
     setState("loading");
-    fetch(`/api/v1/units/${unit}/members`)
+    fetch(memberPageUrl(unit, cursor))
       .then(async (r) => {
         if (!r.ok) throw Error();
-        setMembers(((await r.json()) as { data: Member[] }).data);
+        const page = (await r.json()) as {
+          data: Member[];
+          meta: { nextCursor: string | null };
+        };
+        setMembers(page.data);
+        setNextCursor(page.meta.nextCursor);
         setState("ready");
       })
       .catch(() => setState("error"));
-  }, [unit]);
+  }, [unit, cursor]);
   return (
     <main id="main-content">
       <section className="panel" aria-labelledby="member-title">
@@ -44,7 +53,12 @@ export default function Members() {
         <select
           id="unit"
           value={unit}
-          onChange={(e) => setUnit(e.target.value)}
+          onChange={(e) => {
+            setUnit(e.target.value);
+            setCursor(null);
+            setNextCursor(null);
+            setPreviousCursors([]);
+          }}
         >
           {units.map((u) => (
             <option key={u.id} value={u.id}>
@@ -89,6 +103,32 @@ export default function Members() {
               ))}
             </tbody>
           </table>
+        )}
+        {state === "ready" && members.length > 0 && (
+          <nav aria-label="Member一覧のページ操作">
+            <button
+              type="button"
+              disabled={previousCursors.length === 0}
+              onClick={() => {
+                const prior = previousCursors.at(-1) ?? null;
+                setPreviousCursors((values) => values.slice(0, -1));
+                setCursor(prior);
+              }}
+            >
+              前へ
+            </button>{" "}
+            <button
+              type="button"
+              disabled={!nextCursor}
+              onClick={() => {
+                if (!nextCursor) return;
+                setPreviousCursors((values) => [...values, cursor]);
+                setCursor(nextCursor);
+              }}
+            >
+              次へ
+            </button>
+          </nav>
         )}
       </section>
     </main>

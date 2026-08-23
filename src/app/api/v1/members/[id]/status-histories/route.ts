@@ -1,6 +1,6 @@
 import {
   idSchema,
-  statusHistorySchema,
+  statusHistorySchemaFor,
 } from "../../../../../../lib/member/schemas";
 import { assertMutationRequest } from "../../../../../../lib/member/security";
 import {
@@ -16,7 +16,7 @@ export async function POST(
   return withMemberRuntime(request, await memberRuntime(), async (s, p, r) => {
     assertMutationRequest(request);
     const id = idSchema.parse((await params).id);
-    const body = await strictJson(request, statusHistorySchema);
+    const body = await strictJson(request, statusHistorySchemaFor());
     return success(
       await s.statusHistory(
         p,

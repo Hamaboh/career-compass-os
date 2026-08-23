@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createMemberSchema,
+  createMemberSchemaFor,
   patchMemberSchema,
   statusHistorySchema,
+  statusHistorySchemaFor,
+  todayInTokyo,
   unitHistorySchema,
   cursorQuerySchema,
 } from "../src/lib/member/schemas";
@@ -17,6 +20,7 @@ import {
 } from "../src/lib/auth/capabilities";
 import type { AuditEvent, AuditWriter } from "../src/lib/auth/audit";
 import type { Principal, Role } from "../src/lib/auth/types";
+import { canEditMember, memberPageUrl } from "../src/lib/member/ui-policy";
 class Audit implements AuditWriter {
   events: AuditEvent[] = [];
   async write(e: AuditEvent) {
@@ -87,6 +91,41 @@ describe("I2 strict contracts", () => {
     expect(cursorQuerySchema.parse({}).limit).toBe(25);
     expect(() => cursorQuerySchema.parse({ limit: "101" })).toThrow();
   });
+  it("uses the Asia/Tokyo date boundary for initial membership", () => {
+    const beforeMidnight = new Date("2026-08-22T14:59:59.000Z");
+    const afterMidnight = new Date("2026-08-22T15:00:00.000Z");
+    expect(todayInTokyo(beforeMidnight)).toBe("2026-08-22");
+    expect(todayInTokyo(afterMidnight)).toBe("2026-08-23");
+    const input = {
+      employeeRef: "SYN-TOKYO",
+      displayName: "合成 境界",
+      joinedOn: "2026-08-22",
+      primaryUnitStartedOn: "2026-08-23",
+    };
+    expect(() => createMemberSchemaFor(beforeMidnight).parse(input)).toThrow();
+    expect(createMemberSchemaFor(afterMidnight).parse(input)).toBeTruthy();
+    expect(() =>
+      createMemberSchemaFor(afterMidnight).parse({
+        ...input,
+        joinedOn: "2026-08-23",
+        primaryUnitStartedOn: "2026-08-22",
+      }),
+    ).toThrow();
+  });
+  it("rejects tomorrow's status until Tokyo reaches that date", () => {
+    const input = {
+      status: "ON_LEAVE" as const,
+      startedOn: "2026-08-23",
+      reasonCode: "SYN_LEAVE",
+      version: 1,
+    };
+    expect(() =>
+      statusHistorySchemaFor(new Date("2026-08-22T14:59:59.000Z")).parse(input),
+    ).toThrow();
+    expect(
+      statusHistorySchemaFor(new Date("2026-08-22T15:00:00.000Z")).parse(input),
+    ).toBeTruthy();
+  });
   it.each(["<script>alert(1)</script>", "x' OR 1=1 --"])(
     "treats metacharacters as bounded plain data: %s",
     (displayName) =>
@@ -99,6 +138,39 @@ describe("I2 strict contracts", () => {
         }).displayName,
       ).toBe(displayName),
   );
+});
+
+describe("Member UI policy and pagination", () => {
+  const unitA = "00000000-0000-4000-8000-000000000001";
+  const scope = [{ unitId: unitA, validFrom: "2026-01-01", validTo: null }];
+  it("shows mutation controls only for a scoped edit capability", () => {
+    expect(
+      canEditMember(
+        { capabilities: ["UNIT_EDIT_SCOPED"], unitScopes: scope },
+        unitA,
+      ),
+    ).toBe(true);
+    expect(
+      canEditMember({ capabilities: ["UNIT_READ_ALL"], unitScopes: [] }, unitA),
+    ).toBe(false);
+    expect(
+      canEditMember(
+        {
+          capabilities: ["UNIT_READ_ALL", "UNIT_EDIT_SCOPED"],
+          unitScopes: scope,
+        },
+        "00000000-0000-4000-8000-000000000002",
+      ),
+    ).toBe(false);
+  });
+  it("builds first and subsequent cursor page URLs without leaking raw syntax", () => {
+    const cursor = "00000000-0000-4000-8000-000000000025";
+    expect(memberPageUrl(unitA, null)).toBe(`/api/v1/units/${unitA}/members`);
+    expect(memberPageUrl(unitA, cursor)).toBe(
+      `/api/v1/units/${unitA}/members?cursor=${cursor}`,
+    );
+    expect(() => cursorQuerySchema.parse({ cursor: "invalid" })).toThrow();
+  });
 });
 describe("browser mutation boundary", () => {
   const valid = () =>

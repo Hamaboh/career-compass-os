@@ -57,7 +57,10 @@ export class MemberService {
       this.audit,
       rid,
     );
-    if (!p.capabilities.includes("UNIT_EDIT_SCOPED")) {
+    const scopedEditor =
+      p.capabilities.includes("UNIT_EDIT_SCOPED") &&
+      p.unitScopes.some((scope) => scope.unitId === m.primaryUnitId);
+    if (!scopedEditor) {
       const readOnlyView: Partial<typeof m> = { ...m };
       delete readOnlyView.employeeRef;
       return readOnlyView;
@@ -94,8 +97,8 @@ export class MemberService {
       input,
       unit,
       this.now().toISOString(),
+      rid,
     );
-    await this.event("MEMBER_CREATED", p, m.id, rid);
     return m;
   }
   async patch(
@@ -125,8 +128,8 @@ export class MemberService {
       id,
       input,
       this.now().toISOString(),
+      rid,
     );
-    await this.event("MEMBER_UPDATED", p, id, rid);
     return m;
   }
   async unitHistory(
@@ -163,8 +166,8 @@ export class MemberService {
       id,
       input,
       this.now().toISOString(),
+      rid,
     );
-    await this.event("MEMBER_UNIT_HISTORY_ADDED", p, id, rid);
     return m;
   }
   async statusHistory(
@@ -200,8 +203,8 @@ export class MemberService {
       id,
       input,
       this.now().toISOString(),
+      rid,
     );
-    await this.event("MEMBER_STATUS_HISTORY_ADDED", p, id, rid);
     return m;
   }
   private writeCapability(p: Principal, reason?: string) {
@@ -227,26 +230,5 @@ export class MemberService {
       rid,
     );
     throw new Error("unreachable");
-  }
-  private event(
-    eventType:
-      | "MEMBER_CREATED"
-      | "MEMBER_UPDATED"
-      | "MEMBER_UNIT_HISTORY_ADDED"
-      | "MEMBER_STATUS_HISTORY_ADDED",
-    p: Principal,
-    id: string,
-    rid: string,
-  ) {
-    return this.audit.write({
-      eventType,
-      occurredAt: this.now().toISOString(),
-      actorId: p.actorId,
-      targetType: "member",
-      targetId: id,
-      outcome: "SUCCEEDED",
-      reason: "operation_succeeded",
-      requestId: rid,
-    });
   }
 }

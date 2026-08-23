@@ -1,6 +1,6 @@
 import {
   cursorQuerySchema,
-  createMemberSchema,
+  createMemberSchemaFor,
   idSchema,
 } from "../../../../../../lib/member/schemas";
 import { assertMutationRequest } from "../../../../../../lib/member/security";
@@ -31,7 +31,7 @@ export async function POST(
   return withMemberRuntime(request, await memberRuntime(), async (s, p, r) => {
     assertMutationRequest(request);
     const id = idSchema.parse((await params).id);
-    const body = await strictJson(request, createMemberSchema);
+    const body = await strictJson(request, createMemberSchemaFor());
     return success(
       await s.create(
         p,
