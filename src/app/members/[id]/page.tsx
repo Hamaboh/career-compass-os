@@ -131,6 +131,9 @@ export default function Detail() {
     <main id="main-content">
       <section className="panel">
         <h1>Member詳細</h1>
+        <p>
+          <a href={`/members/${id}/self-analysis`}>本人理解・将来像を開く</a>
+        </p>
         <p role="status" aria-live="polite">
           {message}
         </p>
