@@ -11,6 +11,7 @@ import {
 } from "../src/lib/auth/capabilities";
 import type { AuditEvent, AuditWriter } from "../src/lib/auth/audit";
 import type { Principal, Role } from "../src/lib/auth/types";
+import { SelfUnderstandingRepository } from "../src/lib/self-understanding/repository";
 class Audit implements AuditWriter {
   events: AuditEvent[] = [];
   async write(event: AuditEvent) {
@@ -192,6 +193,147 @@ describe("I3 authorization boundary", () => {
     expect(audit.events.at(-1)).toMatchObject({
       eventType: "MAINTENANCE_BYPASS",
       reason: "synthetic repair reference",
+    });
+  });
+});
+
+describe("I3 repository regressions", () => {
+  it("puts confidential and UL-only reads behind record ACL predicates for mixed roles", async () => {
+    const sql: string[] = [];
+    const db = {
+      prepare(query: string) {
+        sql.push(query);
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            return query.includes("SELECT h.unit_id")
+              ? { unit_id: principal(["UL"]).unitScopes[0]!.unitId }
+              : null;
+          },
+          async all() {
+            return { results: [] };
+          },
+        };
+      },
+      async batch() {
+        return [];
+      },
+    };
+    const mixed = principal(["UL", "EXECUTIVE"]);
+    await new SelfUnderstandingRepository(db as unknown as D1Database).overview(
+      mixed,
+      "00000000-0000-4000-8000-000000000020",
+    );
+    const protectedQueries = sql.filter(
+      (query) =>
+        query.includes("self_analysis_entries e") ||
+        query.includes("future_vision_versions v"),
+    );
+    expect(protectedQueries).toHaveLength(3);
+    for (const query of protectedQueries) {
+      expect(query).toContain("record_access_grants acl");
+      expect(query).toContain("acl.actor_id=?");
+      expect(query).not.toContain("roles");
+    }
+  });
+
+  it("persists question_id in the optimistic entry update", async () => {
+    let updateSql = "";
+    let updateArgs: unknown[] = [];
+    const db = {
+      prepare(query: string) {
+        return {
+          bind(...args: unknown[]) {
+            if (query.startsWith("UPDATE self_analysis_entries")) {
+              updateSql = query;
+              updateArgs = args;
+            }
+            return this;
+          },
+          async first() {
+            if (query.includes("FROM self_analysis_sessions WHERE id=?"))
+              return { member_id: "member-a", unit_id: "unit-a" };
+            if (query.includes("FROM self_analysis_entries WHERE id=?"))
+              return {
+                id: "entry-a",
+                version: 1,
+                response_status: "ANSWERED",
+                response_text: "old",
+                provenance_type: "MEMBER_STATEMENT",
+                confidentiality: "NORMAL",
+                visibility: "UL_AND_EXEC",
+                ai_send_policy: "AI_SEND_ALLOWED",
+                confirmed_at: null,
+              };
+            return null;
+          },
+        };
+      },
+      async batch() {
+        return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+      },
+    };
+    const repo = new SelfUnderstandingRepository(db as unknown as D1Database);
+    repo.overview = async () => ({}) as never;
+    await repo.saveEntry(
+      principal(["UL"]),
+      "session-a",
+      {
+        entryId: "entry-a",
+        questionId: "question-new",
+        version: 1,
+        responseStatus: "ANSWERED",
+        responseText: "new",
+        provenanceType: "MEMBER_STATEMENT",
+        ...normal,
+      },
+      "request-a",
+    );
+    expect(updateSql).toContain("SET question_id=?");
+    expect(updateArgs[0]).toBe("question-new");
+  });
+
+  it("normalizes a concurrent future-vision unique race to VERSION_CONFLICT", async () => {
+    const db = {
+      prepare(query: string) {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            return query.includes("SELECT h.unit_id")
+              ? { unit_id: principal(["UL"]).unitScopes[0]!.unitId }
+              : null;
+          },
+        };
+      },
+      async batch() {
+        throw new Error(
+          "UNIQUE constraint failed: future_vision_versions.member_id, future_vision_versions.kind, future_vision_versions.version",
+        );
+      },
+    };
+    await expect(
+      new SelfUnderstandingRepository(db as unknown as D1Database).createVision(
+        principal(["UL"]),
+        "member-a",
+        {
+          kind: "FUTURE_VISION",
+          statement: "Synthetic future",
+          status: "HYPOTHESIS",
+          provenanceType: "MEMBER_STATEMENT",
+          evidenceEntryIds: [],
+          expectedVersion: 0,
+          ...normal,
+        },
+        "request-a",
+      ),
+    ).rejects.toMatchObject({
+      code: "VERSION_CONFLICT",
+      status: 409,
+      reason: "version_conflict",
     });
   });
 });

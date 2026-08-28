@@ -35,9 +35,24 @@ export class SelfUnderstandingRepository {
     const unit = await this.memberUnit(p, memberId);
     if (!unit)
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
-    const restricted = p.roles.includes("UL")
-      ? ""
-      : "AND e.confidentiality='NORMAL' AND e.visibility='UL_AND_EXEC'";
+    const entryAcl = `AND (
+      (e.confidentiality='NORMAL' AND e.visibility='UL_AND_EXEC')
+      OR e.created_by=?
+      OR EXISTS (
+        SELECT 1 FROM record_access_grants acl
+        WHERE acl.resource_type='SELF_ANALYSIS_ENTRY' AND acl.resource_id=e.id
+          AND acl.actor_id=? AND (acl.expires_at IS NULL OR acl.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      )
+    )`;
+    const visionAcl = `AND (
+      (v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC')
+      OR v.created_by=?
+      OR EXISTS (
+        SELECT 1 FROM record_access_grants acl
+        WHERE acl.resource_type='FUTURE_VISION_VERSION' AND acl.resource_id=v.id
+          AND acl.actor_id=? AND (acl.expires_at IS NULL OR acl.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      )
+    )`;
     const sessions = await this.db
       .prepare(
         "SELECT id,route_type,status,version,started_at,completed_at FROM self_analysis_sessions WHERE member_id=? AND unit_id=? ORDER BY started_at DESC",
@@ -46,9 +61,9 @@ export class SelfUnderstandingRepository {
       .all();
     const entries = await this.db
       .prepare(
-        `SELECT e.* FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=? AND s.unit_id=? ${restricted} ORDER BY e.created_at`,
+        `SELECT e.* FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=? AND s.unit_id=? ${entryAcl} ORDER BY e.created_at`,
       )
-      .bind(memberId, unit)
+      .bind(memberId, unit, p.actorId, p.actorId)
       .all();
     const questions = await this.db
       .prepare(
@@ -62,16 +77,16 @@ export class SelfUnderstandingRepository {
          FROM self_analysis_entry_history h
          JOIN self_analysis_entries e ON e.id=h.entry_id
          JOIN self_analysis_sessions s ON s.id=e.session_id
-         WHERE s.member_id=? AND s.unit_id=? ${p.roles.includes("UL") ? "" : "AND h.confidentiality='NORMAL' AND h.visibility='UL_AND_EXEC'"}
+         WHERE s.member_id=? AND s.unit_id=? ${entryAcl}
          ORDER BY h.changed_at DESC`,
       )
-      .bind(memberId, unit)
+      .bind(memberId, unit, p.actorId, p.actorId)
       .all();
     const visions = await this.db
       .prepare(
-        `SELECT v.* FROM future_vision_versions v WHERE v.member_id=? AND v.unit_id=? ${p.roles.includes("UL") ? "" : "AND v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC'"} ORDER BY v.kind,v.version DESC`,
+        `SELECT v.* FROM future_vision_versions v WHERE v.member_id=? AND v.unit_id=? ${visionAcl} ORDER BY v.kind,v.version DESC`,
       )
-      .bind(memberId, unit)
+      .bind(memberId, unit, p.actorId, p.actorId)
       .all();
     return {
       canEdit:
@@ -349,9 +364,10 @@ export class SelfUnderstandingRepository {
           ),
         this.db
           .prepare(
-            "UPDATE self_analysis_entries SET response_status=?,response_text=?,provenance_type=?,confidentiality=?,visibility=?,ai_send_policy=?,confirmed_at=?,version=version+1,updated_at=? WHERE id=? AND session_id=? AND version=?",
+            "UPDATE self_analysis_entries SET question_id=?,response_status=?,response_text=?,provenance_type=?,confidentiality=?,visibility=?,ai_send_policy=?,confirmed_at=?,version=version+1,updated_at=? WHERE id=? AND session_id=? AND version=?",
           )
           .bind(
+            input.questionId ?? null,
             input.responseStatus,
             input.responseText ?? null,
             input.provenanceType,
@@ -410,14 +426,6 @@ export class SelfUnderstandingRepository {
     const unit = await this.memberUnit(p, memberId, true);
     if (!unit)
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "member_not_visible");
-    const latest = await this.db
-      .prepare(
-        "SELECT id,version FROM future_vision_versions WHERE member_id=? AND kind=? ORDER BY version DESC LIMIT 1",
-      )
-      .bind(memberId, input.kind)
-      .first<{ id: string; version: number }>();
-    if ((latest?.version ?? 0) !== input.expectedVersion)
-      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
     for (const eid of input.evidenceEntryIds) {
       const ok = await this.db
         .prepare(
@@ -430,11 +438,15 @@ export class SelfUnderstandingRepository {
     }
     const id = crypto.randomUUID(),
       now = new Date().toISOString(),
-      version = (latest?.version ?? 0) + 1;
-    await this.db.batch([
+      version = input.expectedVersion + 1;
+    const statements = [
       this.db
         .prepare(
-          "INSERT INTO future_vision_versions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          `INSERT INTO future_vision_versions
+           SELECT ?,?,?,?,?,?,?,?,?,?,?,
+             (SELECT id FROM future_vision_versions WHERE member_id=? AND kind=? AND version=?),
+             ?,?,?
+           WHERE (SELECT COALESCE(MAX(version),0) FROM future_vision_versions WHERE member_id=? AND kind=?)=?`,
         )
         .bind(
           id,
@@ -448,18 +460,44 @@ export class SelfUnderstandingRepository {
           input.visibility,
           input.aiSendPolicy,
           version,
-          latest?.id ?? null,
+          memberId,
+          input.kind,
+          input.expectedVersion,
           input.status === "MEMBER_CONFIRMED" ? now : null,
           p.actorId,
           now,
+          memberId,
+          input.kind,
+          input.expectedVersion,
         ),
       ...input.evidenceEntryIds.map((eid: string) =>
         this.db
-          .prepare("INSERT INTO future_vision_evidence_refs VALUES(?,?)")
-          .bind(id, eid),
+          .prepare(
+            "INSERT INTO future_vision_evidence_refs SELECT ?,? WHERE EXISTS (SELECT 1 FROM future_vision_versions WHERE id=?)",
+          )
+          .bind(id, eid, id),
       ),
-      this.audit("FUTURE_VISION_VERSION_CREATED", p, id, rid, now),
-    ]);
+      this.db
+        .prepare(
+          "INSERT INTO audit_events(id,event_type,occurred_at,actor_id,target_type,target_id,outcome,reason,request_id,metadata_json) SELECT ?,'FUTURE_VISION_VERSION_CREATED',?,?, 'self_understanding',?,'SUCCEEDED','operation_succeeded',?,'{}' WHERE EXISTS (SELECT 1 FROM future_vision_versions WHERE id=?)",
+        )
+        .bind(crypto.randomUUID(), now, p.actorId, id, rid, id),
+    ];
+    try {
+      const result = await this.db.batch(statements);
+      if (!result[0]?.meta.changes)
+        throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    } catch (error) {
+      if (
+        error instanceof MemberError ||
+        (error instanceof Error &&
+          /UNIQUE constraint failed: future_vision_versions\.(member_id|id)/.test(
+            error.message,
+          ))
+      )
+        throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+      throw error;
+    }
     return this.overview(p, memberId);
   }
   async session(p: Principal, id: string, write: boolean) {

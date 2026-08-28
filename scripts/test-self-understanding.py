@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 MIGRATIONS=sorted(Path("migrations").glob("*.sql"))
-ACTOR="00000000-0000-4000-8000-000000000010"; UNIT_A="00000000-0000-4000-8000-000000000001"; UNIT_B="00000000-0000-4000-8000-000000000002"
+ACTOR="00000000-0000-4000-8000-000000000010"; ACTOR_B="00000000-0000-4000-8000-000000000011"; UNIT_A="00000000-0000-4000-8000-000000000001"; UNIT_B="00000000-0000-4000-8000-000000000002"
 MEMBER_A="00000000-0000-4000-8000-000000000020"; MEMBER_B="00000000-0000-4000-8000-000000000021"; NOW="2026-01-02T00:00:00.000Z"
 def apply(db, files):
  for f in files: db.executescript(f.read_text())
@@ -16,6 +16,7 @@ def database(upgrade=False):
 def fixture():
  db=database(True)
  db.execute("INSERT INTO app_users(id,access_subject,email_normalized,display_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(ACTOR,"synthetic-subject","synthetic@example.invalid","Synthetic UL","ACTIVE",NOW,NOW))
+ db.execute("INSERT INTO app_users(id,access_subject,email_normalized,display_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(ACTOR_B,"synthetic-subject-b","synthetic-b@example.invalid","Synthetic Mixed Role","ACTIVE",NOW,NOW))
  db.executemany("INSERT INTO units(id,code,name,status) VALUES(?,?,?,'ACTIVE')",[(UNIT_A,"SYN-A","Synthetic A"),(UNIT_B,"SYN-B","Synthetic B")])
  for member,unit,ref in [(MEMBER_A,UNIT_A,"SYN-01"),(MEMBER_B,UNIT_B,"SYN-02")]:
   db.execute("INSERT INTO members(id,employee_ref,display_name,status,joined_on,created_at,updated_at) VALUES(?,?,?,'ACTIVE','2026-01-01',?,?)",(member,ref,"Synthetic Member",NOW,NOW))
@@ -57,6 +58,30 @@ for sql in invalid:
 entry(db,"entry-secret","session-a",None,"CONFIDENTIAL","UL_ONLY","AI_SEND_PROHIBITED")
 rows=list(db.execute("SELECT e.response_text FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=? AND s.unit_id=? AND e.confidentiality='NORMAL' AND e.visibility='UL_AND_EXEC'",(MEMBER_A,UNIT_A)))
 assert len(rows)==1 and rows[0][0]=="Synthetic response"
+# Unit/global visibility never substitutes for the creator/record ACL predicate.
+acl_query="""SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id
+ WHERE s.member_id=? AND s.unit_id=? AND ((e.confidentiality='NORMAL' AND e.visibility='UL_AND_EXEC') OR e.created_by=? OR EXISTS
+ (SELECT 1 FROM record_access_grants acl WHERE acl.resource_type='SELF_ANALYSIS_ENTRY' AND acl.resource_id=e.id AND acl.actor_id=?
+ AND (acl.expires_at IS NULL OR acl.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')))) ORDER BY e.id"""
+assert [r[0] for r in db.execute(acl_query,(MEMBER_A,UNIT_A,ACTOR_B,ACTOR_B))]==["entry-a"]
+db.execute("INSERT INTO record_access_grants VALUES('grant-a','SELF_ANALYSIS_ENTRY','entry-secret',?,'Synthetic handoff',NULL,?,?)",(ACTOR_B,ACTOR,NOW))
+assert [r[0] for r in db.execute(acl_query,(MEMBER_A,UNIT_A,ACTOR_B,ACTOR_B))]==["entry-a","entry-secret"]
+# Versioned question reassignment is persisted, while a cross-session reassignment rolls back.
+db.execute("UPDATE self_analysis_entries SET question_id='question-a',version=version+1 WHERE id='entry-a' AND session_id='session-a' AND version=1")
+assert tuple(db.execute("SELECT question_id,version FROM self_analysis_entries WHERE id='entry-a'").fetchone())==("question-a",2)
+# The version comparison is part of the insert, so a stale contender creates no vision or audit.
+before=db.total_changes
+db.execute("""INSERT INTO future_vision_versions SELECT 'vision-stale',?,?, 'FUTURE_VISION','Stale','HYPOTHESIS','MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',1,NULL,NULL,?,?
+ WHERE (SELECT COALESCE(MAX(version),0) FROM future_vision_versions WHERE member_id=? AND kind='FUTURE_VISION')=0""",(MEMBER_A,UNIT_A,ACTOR,NOW,MEMBER_A))
+assert db.total_changes==before
+assert db.execute("SELECT count(*) FROM future_vision_versions WHERE id='vision-stale'").fetchone()[0]==0
+try:
+ db.execute("UPDATE self_analysis_entries SET question_id='question-b',version=version+1 WHERE id='entry-a' AND session_id='session-a' AND version=2")
+ raise AssertionError("cross-session question update accepted")
+except sqlite3.IntegrityError: pass
+assert tuple(db.execute("SELECT question_id,version FROM self_analysis_entries WHERE id='entry-a'").fetchone())==("question-a",2)
+# Restore the shared fixture version used by the independent rollback cases below.
+db.execute("UPDATE self_analysis_entries SET version=1 WHERE id='entry-a'")
 # Repository scope predicate conceals another Unit.
 assert db.execute("SELECT m.id FROM members m JOIN member_unit_history h ON h.member_id=m.id WHERE m.id=? AND h.unit_id IN (?)",(MEMBER_B,UNIT_A)).fetchone() is None
 # Version mismatch creates neither history nor success audit for session/question/entry.
