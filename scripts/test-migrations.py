@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 MIGRATIONS = sorted(Path("migrations").glob("*.sql"))
 ACTOR = "00000000-0000-4000-8000-000000000010"
+OTHER_ACTOR = "00000000-0000-4000-8000-000000000011"
 UNIT_A = "00000000-0000-4000-8000-000000000001"
 UNIT_B = "00000000-0000-4000-8000-000000000002"
 MEMBER = "00000000-0000-4000-8000-000000000020"
@@ -38,6 +39,10 @@ def fixture() -> sqlite3.Connection:
     connection.execute(
         "INSERT INTO app_users(id,access_subject,email_normalized,display_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
         (ACTOR, "subject", "synthetic@example.invalid", "Synthetic", "ACTIVE", "2026-01-01", "2026-01-01"),
+    )
+    connection.execute(
+        "INSERT INTO app_users(id,access_subject,email_normalized,display_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        (OTHER_ACTOR, "other-subject", "other-synthetic@example.invalid", "Other Synthetic", "ACTIVE", "2026-01-01", "2026-01-01"),
     )
     connection.executemany(
         "INSERT INTO units(id,code,name,status) VALUES(?,?,?,?)",
@@ -327,6 +332,101 @@ try:
 except sqlite3.IntegrityError:
     pass
 assert connection.execute("SELECT lifecycle_status FROM goals WHERE id=?", (goal_id,)).fetchone()[0] == "DRAFT"
+
+# Parent updates enforce owner scope and reject indirect cycles.
+connection.execute("INSERT INTO goals VALUES('parent-a',?,?,NULL,NULL,'DRAFT','MEMBER',1,?,'2026-01-01','2026-01-01')", (MEMBER, UNIT_A, ACTOR))
+connection.execute("INSERT INTO goals VALUES('parent-b',?,?,'parent-a',NULL,'DRAFT','MEMBER',1,?,'2026-01-01','2026-01-01')", (MEMBER, UNIT_A, ACTOR))
+try:
+    connection.execute("UPDATE goals SET parent_goal_id='parent-b' WHERE id='parent-a'")
+    raise AssertionError("indirect goal cycle was accepted")
+except sqlite3.IntegrityError:
+    pass
+
+# Optional links enforce version/member/unit/kind; unsupported arbitrary IDs fail.
+vision = "vision-synthetic"
+connection.execute("INSERT INTO future_vision_versions VALUES(?,?,?,'FUTURE_VISION','Synthetic future','HYPOTHESIS','MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',1,NULL,NULL,?,'2026-01-01')", (vision, MEMBER, UNIT_A, ACTOR))
+connection.execute("INSERT INTO goal_links VALUES('link-ok',?,'FUTURE_VISION',?,'optional',?,'2026-01-01')", (goal_version, vision, ACTOR))
+try:
+    connection.execute("INSERT INTO goal_links VALUES('link-bad',?,'KPI','arbitrary','',?,'2026-01-01')", (goal_version, ACTOR))
+    raise AssertionError("unsupported arbitrary goal link was accepted")
+except sqlite3.IntegrityError:
+    pass
+
+# Latest-link selection is calculated after ACL filtering. A newer confidential
+# version invisible to this actor must not hide the latest visible older one.
+connection.execute(
+    "INSERT INTO future_vision_versions VALUES('vision-hidden',?,?, 'FUTURE_VISION','Hidden future','HYPOTHESIS','UL_OBSERVATION','CONFIDENTIAL','UL_ONLY','AI_SEND_PROHIBITED',2,?,NULL,?,'2026-02-01')",
+    (MEMBER, UNIT_A, vision, OTHER_ACTOR),
+)
+visible_link = connection.execute(
+    """WITH visible AS (
+         SELECT f.id,f.member_id,f.kind,f.version FROM future_vision_versions f
+         WHERE f.member_id=? AND f.unit_id=?
+           AND ((f.confidentiality='NORMAL' AND f.visibility='UL_AND_EXEC') OR f.created_by=? OR EXISTS (
+             SELECT 1 FROM record_access_grants a WHERE a.resource_type='FUTURE_VISION_VERSION'
+               AND a.resource_id=f.id AND a.actor_id=? AND (a.expires_at IS NULL OR a.expires_at>'2026-02-01')
+           )))
+       SELECT v.id FROM visible v WHERE NOT EXISTS (
+         SELECT 1 FROM visible newer WHERE newer.member_id=v.member_id AND newer.kind=v.kind AND newer.version>v.version
+       )""",
+    (MEMBER, UNIT_A, ACTOR, ACTOR),
+).fetchone()[0]
+assert visible_link == vision
+
+# Revision is all-or-nothing: old status, current pointer and success audit roll
+# back together on conflict; a successful revision supersedes exactly one version.
+def revise_goal(new_id: str, expected: int, request_id: str) -> None:
+    def statements() -> None:
+        connection.execute(
+            "INSERT INTO goal_revision_guards(goal_id,expected_version,expected_current_version_id,proposed_version_id,created_at) VALUES(?,?,?,?,?)",
+            (goal_id, expected, goal_version, new_id, "2026-02-01"),
+        )
+        connection.execute("INSERT INTO goal_versions VALUES(?,?,2,'DIRECT_GOAL','Revised','','2026-12-01','Evidence','monthly','DRAFT','Member changed direction','UL_OBSERVATION','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,'2026-02-01')", (new_id, goal_id, ACTOR))
+        connection.execute("UPDATE goal_versions SET status='SUPERSEDED' WHERE id=?", (goal_version,))
+        connection.execute("UPDATE goals SET current_version_id=?,version=version+1 WHERE id=? AND version=?", (new_id, goal_id, expected))
+        connection.execute("INSERT INTO audit_events(id,event_type,occurred_at,actor_id,target_type,target_id,outcome,reason,request_id,metadata_json) VALUES(?, 'GOAL_REVISED','2026-02-01',?,'goal',?,'SUCCEEDED','operation_succeeded',?,'{}')", (f'audit-{request_id}', ACTOR, goal_id, request_id))
+        connection.execute("DELETE FROM goal_revision_guards WHERE goal_id=? AND proposed_version_id=?", (goal_id, new_id))
+    transaction(connection, statements)
+
+before_versions = connection.execute("SELECT COUNT(*) FROM goal_versions").fetchone()[0]
+try:
+    revise_goal("revision-conflict", 99, "revision-conflict")
+    raise AssertionError("conflicting revision succeeded")
+except sqlite3.IntegrityError:
+    pass
+assert connection.execute("SELECT COUNT(*) FROM goal_versions").fetchone()[0] == before_versions
+assert connection.execute("SELECT status FROM goal_versions WHERE id=?", (goal_version,)).fetchone()[0] == "DRAFT"
+assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE request_id='revision-conflict'").fetchone()[0] == 0
+revise_goal("revision-ok", 1, "revision-ok")
+assert connection.execute("SELECT status FROM goal_versions WHERE id=?", (goal_version,)).fetchone()[0] == "SUPERSEDED"
+assert connection.execute("SELECT current_version_id FROM goals WHERE id=?", (goal_id,)).fetchone()[0] == "revision-ok"
+
+# Both candidates observed aggregate version 1/current revision before either
+# batch. D1 serializes the transactional batches: the winner commits and the
+# stale loser fails in the guard trigger without leaving any partial state.
+try:
+    revise_goal("revision-loser", 1, "revision-loser")
+    raise AssertionError("second concurrent revision candidate succeeded")
+except sqlite3.IntegrityError as error:
+    assert "goal revision version conflict" in str(error)
+assert connection.execute("SELECT COUNT(*) FROM goal_versions WHERE id='revision-loser'").fetchone()[0] == 0
+assert connection.execute("SELECT status FROM goal_versions WHERE id=?", (goal_version,)).fetchone()[0] == "SUPERSEDED"
+assert connection.execute("SELECT current_version_id FROM goals WHERE id=?", (goal_id,)).fetchone()[0] == "revision-ok"
+assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE request_id='revision-loser'").fetchone()[0] == 0
+assert connection.execute("SELECT COUNT(*) FROM goal_revision_guards").fetchone()[0] == 0
+
+# Attachments to superseded revisions are rejected for both actions and evidence.
+try:
+    connection.execute("INSERT INTO action_items VALUES('old-action',?,?,?,'Old',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01')", (goal_version, MEMBER, ACTOR))
+    raise AssertionError("action attached to old revision")
+except sqlite3.IntegrityError:
+    pass
+connection.execute("INSERT INTO action_items VALUES('new-action','revision-ok',?,?, 'New',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01')", (MEMBER, ACTOR))
+try:
+    connection.execute("INSERT INTO evidence VALUES('old-evidence','new-action',?,?, 'NOTE','Old revision',NULL,NULL,'UNVERIFIED','UL_OBSERVATION',?,'2026-02-01')", (goal_version, MEMBER, ACTOR))
+    raise AssertionError("evidence attached to old revision")
+except sqlite3.IntegrityError:
+    pass
 
 # Cursor query returns every row across 25/26/multiple-page boundaries.
 connection = fixture()
