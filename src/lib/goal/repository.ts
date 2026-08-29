@@ -53,9 +53,17 @@ export class GoalRepository {
       const [versions, smart, actions, evidence, links] = await Promise.all([
         this.db
           .prepare(
-            "SELECT id,version_no,title,status,change_reason,created_at FROM goal_versions WHERE goal_id=? ORDER BY version_no DESC",
+            `SELECT v.id,v.version_no,v.title,v.status,v.change_reason,v.created_at
+             FROM goal_versions v JOIN goals g ON g.id=v.goal_id
+             WHERE v.goal_id=?
+               AND ((v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC') OR g.created_by=? OR EXISTS (
+                 SELECT 1 FROM record_access_grants a WHERE a.resource_type='GOAL_VERSION'
+                 AND a.resource_id=v.id AND a.actor_id=?
+                 AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+               ))
+             ORDER BY v.version_no DESC`,
           )
-          .bind(goal.id)
+          .bind(goal.id, p.actorId, p.actorId)
           .all(),
         this.db
           .prepare("SELECT * FROM smart_audits WHERE goal_version_id=?")

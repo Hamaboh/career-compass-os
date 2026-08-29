@@ -115,6 +115,7 @@ describe("goal repository confidentiality boundary", () => {
         { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
       ],
     } as Principal;
+    await new GoalRepository(db as unknown as D1Database).list(p, "member-a");
     await expect(
       new GoalRepository(db as unknown as D1Database).action(
         p,
@@ -130,6 +131,14 @@ describe("goal repository confidentiality boundary", () => {
     expect(protectedSql).toContain("g.created_by=?");
     expect(protectedSql).toContain("record_access_grants a");
     expect(protectedSql).toContain("a.expires_at");
+
+    const historySql = sql.find((q) =>
+      q.includes("FROM goal_versions v JOIN goals g ON g.id=v.goal_id"),
+    );
+    expect(historySql).toContain("v.visibility='UL_AND_EXEC'");
+    expect(historySql).toContain("g.created_by=?");
+    expect(historySql).toContain("a.resource_id=v.id");
+    expect(historySql).toContain("a.expires_at");
   });
 
   it("maps only the database CAS signal to VERSION_CONFLICT", async () => {

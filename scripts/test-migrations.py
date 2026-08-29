@@ -373,8 +373,69 @@ visible_link = connection.execute(
 ).fetchone()[0]
 assert visible_link == vision
 
+# Historical goal versions apply their own ACL. A visible current version must
+# not reveal the existence or contents of an older confidential version.
+connection.execute(
+    "UPDATE goal_versions SET status='SUPERSEDED',confidentiality='CONFIDENTIAL',visibility='UL_ONLY',ai_send_policy='AI_SEND_PROHIBITED' WHERE id=?",
+    (goal_version,),
+)
+current_goal_version = "goal-version-current"
+connection.execute(
+    "INSERT INTO goal_versions VALUES(?,?,2,'DIRECT_GOAL','Visible current','','2026-12-01','Synthetic evidence','monthly','DRAFT','Synthetic revision','MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,'2026-02-01')",
+    (current_goal_version, goal_id, ACTOR),
+)
+connection.execute(
+    "UPDATE goals SET current_version_id=?,version=2 WHERE id=?",
+    (current_goal_version, goal_id),
+)
+
+def visible_goal_history(actor_id: str) -> list[tuple[str, str]]:
+    return [
+        tuple(row)
+        for row in connection.execute(
+            """SELECT v.id,v.title FROM goal_versions v JOIN goals g ON g.id=v.goal_id
+               WHERE v.goal_id=?
+                 AND ((v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC') OR g.created_by=? OR EXISTS (
+                   SELECT 1 FROM record_access_grants a WHERE a.resource_type='GOAL_VERSION'
+                     AND a.resource_id=v.id AND a.actor_id=?
+                     AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                 ))
+               ORDER BY v.version_no DESC""",
+            (goal_id, actor_id, actor_id),
+        )
+    ]
+
+assert visible_goal_history(OTHER_ACTOR) == [(current_goal_version, "Visible current")]
+assert visible_goal_history(ACTOR) == [
+    (current_goal_version, "Visible current"),
+    (goal_version, "Synthetic goal"),
+]
+connection.execute(
+    "INSERT INTO record_access_grants VALUES('goal-expired-grant','GOAL_VERSION',?,?,?,'2000-01-01',?,'2026-01-01')",
+    (goal_version, OTHER_ACTOR, "Synthetic expired boundary", ACTOR),
+)
+assert visible_goal_history(OTHER_ACTOR) == [(current_goal_version, "Visible current")]
+connection.execute(
+    "UPDATE record_access_grants SET expires_at='2999-01-01' WHERE id='goal-expired-grant'",
+)
+assert visible_goal_history(OTHER_ACTOR) == [
+    (current_goal_version, "Visible current"),
+    (goal_version, "Synthetic goal"),
+]
+
 # Revision is all-or-nothing: old status, current pointer and success audit roll
 # back together on conflict; a successful revision supersedes exactly one version.
+connection = fixture()
+connection.execute(
+    "INSERT INTO goals VALUES(?,?,?,?,NULL,'DRAFT','MEMBER',1,?,?,?)",
+    (goal_id, MEMBER, UNIT_A, None, ACTOR, "2026-01-01", "2026-01-01"),
+)
+connection.execute(
+    "INSERT INTO goal_versions VALUES(?,?,1,'DIRECT_GOAL','Synthetic goal','','2026-12-01','Synthetic evidence','monthly','DRAFT',NULL,'MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,?)",
+    (goal_version, goal_id, ACTOR, "2026-01-01"),
+)
+connection.execute("UPDATE goals SET current_version_id=? WHERE id=?", (goal_version, goal_id))
+
 def revise_goal(new_id: str, expected: int, request_id: str) -> None:
     def statements() -> None:
         connection.execute(
