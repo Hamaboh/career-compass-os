@@ -300,6 +300,34 @@ assert connection.execute("SELECT COUNT(*) FROM member_unit_history WHERE member
 assert connection.execute("SELECT COUNT(*) FROM member_status_history WHERE member_id=?", (created_id,)).fetchone()[0] == 0
 assert connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 0
 
+# Goal DB gates reject confirmation without an approved Member confirmation and
+# reject action/evidence links that do not belong to the current owner/version.
+connection = fixture()
+goal_id, goal_version = "goal-synthetic", "goal-version-synthetic"
+connection.execute(
+    "INSERT INTO goals VALUES(?,?,?,?,NULL,'DRAFT','MEMBER',1,?,?,?)",
+    (goal_id, MEMBER, UNIT_A, None, ACTOR, "2026-01-01", "2026-01-01"),
+)
+connection.execute(
+    "INSERT INTO goal_versions VALUES(?,?,1,'DIRECT_GOAL','Synthetic goal','','2026-12-01','Synthetic evidence','monthly','DRAFT',NULL,'MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,?)",
+    (goal_version, goal_id, ACTOR, "2026-01-01"),
+)
+connection.execute("UPDATE goals SET current_version_id=? WHERE id=?", (goal_version, goal_id))
+try:
+    connection.execute("UPDATE goals SET lifecycle_status='CONFIRMED' WHERE id=?", (goal_id,))
+    raise AssertionError("goal confirmed without Member confirmation")
+except sqlite3.IntegrityError:
+    pass
+try:
+    connection.execute(
+        "INSERT INTO action_items VALUES('bad-action',?,'wrong-member',?,'Synthetic action',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-01-01')",
+        (goal_version, ACTOR),
+    )
+    raise AssertionError("cross-owner action was accepted")
+except sqlite3.IntegrityError:
+    pass
+assert connection.execute("SELECT lifecycle_status FROM goals WHERE id=?", (goal_id,)).fetchone()[0] == "DRAFT"
+
 # Cursor query returns every row across 25/26/multiple-page boundaries.
 connection = fixture()
 for number in range(1, 53):
