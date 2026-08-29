@@ -134,6 +134,9 @@ export default function Detail() {
         <p>
           <a href={`/members/${id}/self-analysis`}>本人理解・将来像を開く</a>
         </p>
+        <p>
+          <a href={`/members/${id}/goals`}>目標・SMARTを開く</a>
+        </p>
         <p role="status" aria-live="polite">
           {message}
         </p>
