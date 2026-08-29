@@ -23,14 +23,10 @@ export const goalInput = z
     links: z
       .array(
         z.object({
-          type: z.enum([
-            "WHY",
-            "FUTURE_VISION",
-            "DREAM",
-            "CAREER_DIRECTION",
-            "KPI",
-            "UNIT_LEADERS_MISSION",
-          ]),
+          // I4 can only establish referential integrity for the two versioned
+          // self-understanding records. The other Design Freeze link types are
+          // intentionally deferred rather than accepting unverified IDs.
+          type: z.enum(["FUTURE_VISION", "CAREER_DIRECTION"]),
           referenceId: z.string().trim().min(1).max(200),
           relevanceNote: z.string().trim().max(1000).default(""),
         }),
@@ -50,6 +46,13 @@ export const goalInput = z
         message: "機密はUL限定かつAI送信不可です",
       });
   });
+export const revisionInput = goalInput
+  .omit({ parentGoalId: true })
+  .extend({
+    version: z.number().int().positive(),
+    changeReason: z.string().trim().min(1).max(1000),
+  })
+  .strict();
 export const finalizeInput = z
   .object({
     version: z.number().int().positive(),

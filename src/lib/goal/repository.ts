@@ -7,6 +7,7 @@ import type {
   evidenceInput,
   finalizeInput,
   goalInput,
+  revisionInput,
 } from "./schemas";
 type DB = Pick<D1Database, "prepare" | "batch">;
 type Goal = z.infer<typeof goalInput>;
@@ -37,7 +38,7 @@ export class GoalRepository {
   }
   async list(p: Principal, memberId: string) {
     const unit = await this.unit(p, memberId);
-    const acl = `AND ((v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC') OR v.created_by=? OR EXISTS (SELECT 1 FROM record_access_grants a WHERE a.resource_type='GOAL_VERSION' AND a.resource_id=v.id AND a.actor_id=? AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))))`;
+    const acl = `AND ((v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC') OR g.created_by=? OR EXISTS (SELECT 1 FROM record_access_grants a WHERE a.resource_type='GOAL_VERSION' AND a.resource_id=v.id AND a.actor_id=? AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))))`;
     const goals = await this.db
       .prepare(
         `SELECT g.*,v.title,v.description,v.target_date,v.success_criteria,v.entry_route,v.provenance_type,v.confidentiality,v.version_no FROM goals g JOIN goal_versions v ON v.id=g.current_version_id WHERE g.member_id=? AND g.unit_id=? ${acl} ORDER BY g.updated_at DESC`,
@@ -88,11 +89,27 @@ export class GoalRepository {
         links: links.results,
       });
     }
+    const availableLinks = await this.db
+      .prepare(
+        `SELECT f.id,f.kind,f.statement FROM future_vision_versions f
+       WHERE f.member_id=? AND f.unit_id=? AND f.kind IN ('FUTURE_VISION','CAREER_DIRECTION')
+       AND ((f.confidentiality='NORMAL' AND f.visibility='UL_AND_EXEC') OR f.created_by=? OR EXISTS (
+         SELECT 1 FROM record_access_grants a WHERE a.resource_type='FUTURE_VISION_VERSION'
+         AND a.resource_id=f.id AND a.actor_id=?
+         AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))))
+       AND NOT EXISTS (
+         SELECT 1 FROM future_vision_versions newer WHERE newer.member_id=f.member_id
+         AND newer.kind=f.kind AND newer.version>f.version)
+       ORDER BY f.kind,f.version DESC`,
+      )
+      .bind(memberId, unit, p.actorId, p.actorId)
+      .all();
     return {
       canEdit:
         p.capabilities.includes("UNIT_EDIT_SCOPED") &&
         p.unitScopes.some((s) => s.unitId === unit),
       goals: details,
+      availableLinks: availableLinks.results,
     };
   }
   async create(p: Principal, memberId: string, input: Goal, rid: string) {
@@ -176,13 +193,93 @@ export class GoalRepository {
     const unit = await this.unit(p, memberId, write);
     const row = await this.db
       .prepare(
-        "SELECT id,current_version_id,version FROM goals WHERE id=? AND member_id=? AND unit_id=?",
+        `SELECT g.id,g.current_version_id,g.version,v.version_no AS current_version_no FROM goals g
+         JOIN goal_versions v ON v.id=g.current_version_id
+         WHERE g.id=? AND g.member_id=? AND g.unit_id=?
+           AND (v.confidentiality='NORMAL' OR g.created_by=? OR EXISTS (
+             SELECT 1 FROM record_access_grants a WHERE a.resource_type='GOAL_VERSION'
+             AND a.resource_id=v.id AND a.actor_id=?
+             AND (a.expires_at IS NULL OR a.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))))`,
       )
-      .bind(goalId, memberId, unit)
-      .first<{ id: string; current_version_id: string; version: number }>();
+      .bind(goalId, memberId, unit, p.actorId, p.actorId)
+      .first<{
+        id: string;
+        current_version_id: string;
+        current_version_no: number;
+        version: number;
+      }>();
     if (!row)
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "goal_not_visible");
     return row;
+  }
+  async revise(
+    p: Principal,
+    memberId: string,
+    goalId: string,
+    input: z.infer<typeof revisionInput>,
+    rid: string,
+  ) {
+    const goal = await this.owned(p, memberId, goalId, true);
+    if (goal.version !== input.version)
+      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    const vid = crypto.randomUUID(),
+      now = new Date().toISOString(),
+      nextVersion = goal.current_version_no + 1;
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            "INSERT INTO goal_versions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          )
+          .bind(
+            vid,
+            goalId,
+            nextVersion,
+            input.entryRoute,
+            input.title,
+            input.description,
+            input.targetDate ?? null,
+            input.successCriteria,
+            input.reviewCycle ?? null,
+            "DRAFT",
+            input.changeReason,
+            input.provenanceType,
+            input.confidentiality,
+            input.visibility,
+            input.aiSendPolicy,
+            p.actorId,
+            null,
+            now,
+          ),
+        ...input.links.map((l) =>
+          this.db
+            .prepare("INSERT INTO goal_links VALUES(?,?,?,?,?,?,?)")
+            .bind(
+              crypto.randomUUID(),
+              vid,
+              l.type,
+              l.referenceId,
+              l.relevanceNote,
+              p.actorId,
+              now,
+            ),
+        ),
+        this.db
+          .prepare(
+            "UPDATE goal_versions SET status='SUPERSEDED' WHERE id=? AND goal_id=?",
+          )
+          .bind(goal.current_version_id, goalId),
+        this.db
+          .prepare(
+            "UPDATE goals SET current_version_id=?,lifecycle_status='DRAFT',version=version+1,updated_at=? WHERE id=? AND version=?",
+          )
+          .bind(vid, now, goalId, input.version),
+        this.audit("GOAL_REVISED", p, goalId, rid, now),
+      ]);
+    } catch {
+      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    }
+    return this.list(p, memberId);
   }
   async finalize(
     p: Principal,

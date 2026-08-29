@@ -20,8 +20,17 @@ type Goal = {
   versions: { version_no: number; title: string; status: string }[];
   actions: { id: string; title: string; status: string }[];
   evidence: { id: string; description: string; kind: string }[];
+  links: { link_type: string; reference_id: string; relevance_note: string }[];
 };
-type Data = { canEdit: boolean; goals: Goal[] };
+type Data = {
+  canEdit: boolean;
+  goals: Goal[];
+  availableLinks: {
+    id: string;
+    kind: "FUTURE_VISION" | "CAREER_DIRECTION";
+    statement: string;
+  }[];
+};
 export default function Goals() {
   const memberId = String(useParams().id),
     [data, setData] = useState<Data | null>(null),
@@ -70,6 +79,61 @@ export default function Goals() {
       successCriteria: f.get("successCriteria"),
       reviewCycle: f.get("reviewCycle") || null,
       provenanceType: f.get("provenanceType"),
+      confidentiality: conf ? "CONFIDENTIAL" : "NORMAL",
+      visibility: conf ? "UL_ONLY" : "UL_AND_EXEC",
+      aiSendPolicy: conf ? "AI_SEND_PROHIBITED" : "AI_SEND_ALLOWED",
+      links: data!.availableLinks.flatMap((link) =>
+        f.get(`link-${link.id}`)
+          ? [
+              {
+                type: link.kind,
+                referenceId: link.id,
+                relevanceNote: String(f.get(`note-${link.id}`) ?? ""),
+              },
+            ]
+          : [],
+      ),
+    });
+  }
+  function action(e: FormEvent<HTMLFormElement>, g: Goal) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    void send(`${url}/${g.id}/actions`, {
+      version: g.version,
+      title: f.get("title"),
+      dueAt: f.get("dueAt") ? `${f.get("dueAt")}T00:00:00.000Z` : null,
+      expectedEvidence: f.get("expectedEvidence") || null,
+      provenanceType: "UL_OBSERVATION",
+    });
+  }
+  function evidence(e: FormEvent<HTMLFormElement>, g: Goal) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    void send(`${url}/${g.id}/evidence`, {
+      version: g.version,
+      actionId: f.get("actionId"),
+      kind: f.get("kind"),
+      description: f.get("description"),
+      referenceUri: f.get("referenceUri") || null,
+      occurredOn: f.get("occurredOn") || null,
+      verificationStatus: "UNVERIFIED",
+      provenanceType: "UL_OBSERVATION",
+    });
+  }
+  function revise(e: FormEvent<HTMLFormElement>, g: Goal) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget),
+      conf = f.get("confidentiality") === "CONFIDENTIAL";
+    void send(`${url}/${g.id}/revisions`, {
+      version: g.version,
+      changeReason: f.get("changeReason"),
+      entryRoute: g.entry_route,
+      title: f.get("title"),
+      description: f.get("description"),
+      targetDate: g.target_date,
+      successCriteria: f.get("successCriteria"),
+      reviewCycle: null,
+      provenanceType: "UL_OBSERVATION",
       confidentiality: conf ? "CONFIDENTIAL" : "NORMAL",
       visibility: conf ? "UL_ONLY" : "UL_AND_EXEC",
       aiSendPolicy: conf ? "AI_SEND_PROHIBITED" : "AI_SEND_ALLOWED",
@@ -160,8 +224,21 @@ export default function Goals() {
               機密（UL限定・AI送信禁止）
             </label>
             <p>
-              制度リンクは作成後に任意で追加できます。未接続でも保存できます。
+              利用可能な任意リンク（Why・Dream・KPI・UL
+              Missionは参照レコード実装後に対応）
             </p>
+            {data.availableLinks.map((link) => (
+              <fieldset key={link.id}>
+                <label>
+                  <input type="checkbox" name={`link-${link.id}`} />
+                  {link.kind}: {link.statement}
+                </label>
+                <label>
+                  関連メモ
+                  <input name={`note-${link.id}`} maxLength={1000} />
+                </label>
+              </fieldset>
+            ))}
             <button>下書きを作成</button>
           </form>
         )}
@@ -177,6 +254,17 @@ export default function Goals() {
                 {g.provenance_type}
               </p>
               <p>{g.description}</p>
+              <p>
+                任意リンク:{" "}
+                {g.links.length
+                  ? g.links
+                      .map(
+                        (l) =>
+                          `${l.link_type}${l.relevance_note ? `（${l.relevance_note}）` : ""}`,
+                      )
+                      .join("、")
+                  : "なし"}
+              </p>
               <p>
                 達成基準: {g.success_criteria || "未入力"} / 期限:{" "}
                 {g.target_date || "合理的例外を検討"}
@@ -262,6 +350,94 @@ export default function Goals() {
                   </li>
                 ))}
               </ul>
+              {data.canEdit && (
+                <>
+                  <form className="form" onSubmit={(e) => revise(e, g)}>
+                    <h4>新版を作成</h4>
+                    <label>
+                      変更理由
+                      <input name="changeReason" required />
+                    </label>
+                    <label>
+                      目標
+                      <input name="title" defaultValue={g.title} required />
+                    </label>
+                    <label>
+                      説明
+                      <textarea
+                        name="description"
+                        defaultValue={g.description}
+                      />
+                    </label>
+                    <label>
+                      達成基準
+                      <textarea
+                        name="successCriteria"
+                        defaultValue={g.success_criteria}
+                      />
+                    </label>
+                    <label>
+                      <input type="checkbox" name="confidentiality" />
+                      機密
+                    </label>
+                    <button>旧版を保持して新版を作成</button>
+                  </form>
+                  <form className="form" onSubmit={(e) => action(e, g)}>
+                    <h4>現行版へActionを追加</h4>
+                    <label>
+                      行動
+                      <input name="title" required />
+                    </label>
+                    <label>
+                      期限
+                      <input name="dueAt" type="date" />
+                    </label>
+                    <label>
+                      期待するEvidence
+                      <input name="expectedEvidence" />
+                    </label>
+                    <button>Actionを追加</button>
+                  </form>
+                  {!!g.actions.length && (
+                    <form className="form" onSubmit={(e) => evidence(e, g)}>
+                      <h4>ActionへEvidenceを追加</h4>
+                      <label>
+                        Action
+                        <select name="actionId">
+                          {g.actions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        種類
+                        <select name="kind">
+                          <option value="REFERENCE">参照</option>
+                          <option value="NOTE">メモ</option>
+                          <option value="DELIVERABLE_METADATA">
+                            成果物metadata
+                          </option>
+                        </select>
+                      </label>
+                      <label>
+                        説明
+                        <textarea name="description" required />
+                      </label>
+                      <label>
+                        参照URL
+                        <input name="referenceUri" type="url" />
+                      </label>
+                      <label>
+                        発生日
+                        <input name="occurredOn" type="date" />
+                      </label>
+                      <button>Evidenceを追加</button>
+                    </form>
+                  )}
+                </>
+              )}
             </article>
           ))
         )}
