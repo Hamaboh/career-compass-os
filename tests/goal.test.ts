@@ -131,4 +131,64 @@ describe("goal repository confidentiality boundary", () => {
     expect(protectedSql).toContain("record_access_grants a");
     expect(protectedSql).toContain("a.expires_at");
   });
+
+  it("maps only the database CAS signal to VERSION_CONFLICT", async () => {
+    const queries: string[] = [];
+    const database = (failure: Error) => ({
+      prepare(query: string) {
+        queries.push(query);
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            if (query.includes("SELECT h.unit_id"))
+              return { unit_id: "unit-a" };
+            if (query.includes("JOIN goal_versions v"))
+              return {
+                id: "goal-a",
+                current_version_id: "version-a",
+                current_version_no: 1,
+                version: 1,
+              };
+            return null;
+          },
+        };
+      },
+      async batch() {
+        throw failure;
+      },
+    });
+    const p = {
+      actorId: "actor-a",
+      roles: ["UL"],
+      capabilities: ["UNIT_EDIT_SCOPED"],
+      globalUnitRead: false,
+      unitScopes: [
+        { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
+      ],
+    } as Principal;
+    const input = revisionInput.parse({
+      ...base,
+      version: 1,
+      changeReason: "changed",
+    });
+    await expect(
+      new GoalRepository(
+        database(
+          new Error("goal revision version conflict"),
+        ) as unknown as D1Database,
+      ).revise(p, "member-a", "goal-a", input, "rid-a"),
+    ).rejects.toMatchObject({ status: 409, code: "VERSION_CONFLICT" });
+    await expect(
+      new GoalRepository(
+        database(
+          new Error("goal link owner mismatch"),
+        ) as unknown as D1Database,
+      ).revise(p, "member-a", "goal-a", input, "rid-b"),
+    ).rejects.toMatchObject({ status: 422, code: "GOAL_REVISION_INVALID" });
+    expect(
+      queries.some((query) => query.includes("goal_revision_guards")),
+    ).toBe(true);
+  });
 });

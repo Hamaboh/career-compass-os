@@ -16,7 +16,11 @@ type Goal = {
   version: number;
   target_date: string | null;
   success_criteria: string;
+  review_cycle: string | null;
   provenance_type: string;
+  confidentiality: "NORMAL" | "CONFIDENTIAL";
+  visibility: "UL_AND_EXEC" | "UL_ONLY";
+  ai_send_policy: "AI_SEND_ALLOWED" | "AI_SEND_PROHIBITED";
   versions: { version_no: number; title: string; status: string }[];
   actions: { id: string; title: string; status: string }[];
   evidence: { id: string; description: string; kind: string }[];
@@ -132,13 +136,42 @@ export default function Goals() {
       description: f.get("description"),
       targetDate: g.target_date,
       successCriteria: f.get("successCriteria"),
-      reviewCycle: null,
+      reviewCycle: g.review_cycle,
       provenanceType: "UL_OBSERVATION",
       confidentiality: conf ? "CONFIDENTIAL" : "NORMAL",
       visibility: conf ? "UL_ONLY" : "UL_AND_EXEC",
       aiSendPolicy: conf ? "AI_SEND_PROHIBITED" : "AI_SEND_ALLOWED",
-      links: [],
+      links: revisionLinkChoices(g).flatMap((link) =>
+        f.get(`revision-link-${link.id}`)
+          ? [
+              {
+                type: link.kind,
+                referenceId: link.id,
+                relevanceNote: String(f.get(`revision-note-${link.id}`) ?? ""),
+              },
+            ]
+          : [],
+      ),
     });
+  }
+  function revisionLinkChoices(g: Goal) {
+    const choices = new Map(
+      data!.availableLinks.map((link) => [
+        link.id,
+        { ...link, relevanceNote: "", selected: false },
+      ]),
+    );
+    for (const link of g.links) {
+      const available = choices.get(link.reference_id);
+      choices.set(link.reference_id, {
+        id: link.reference_id,
+        kind: link.link_type as "FUTURE_VISION" | "CAREER_DIRECTION",
+        statement: available?.statement ?? "現在のリンク（参照本文は非表示）",
+        relevanceNote: link.relevance_note,
+        selected: true,
+      });
+    }
+    return [...choices.values()];
   }
   function confirm(e: FormEvent<HTMLFormElement>, g: Goal) {
     e.preventDefault();
@@ -377,9 +410,36 @@ export default function Goals() {
                       />
                     </label>
                     <label>
-                      <input type="checkbox" name="confidentiality" />
+                      <input
+                        type="checkbox"
+                        name="confidentiality"
+                        defaultChecked={g.confidentiality === "CONFIDENTIAL"}
+                      />
                       機密
                     </label>
+                    <fieldset>
+                      <legend>任意リンク（現在の選択を既定で維持）</legend>
+                      {revisionLinkChoices(g).map((link) => (
+                        <div key={link.id}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              name={`revision-link-${link.id}`}
+                              defaultChecked={link.selected}
+                            />
+                            {link.kind}: {link.statement}
+                          </label>
+                          <label>
+                            関連メモ
+                            <input
+                              name={`revision-note-${link.id}`}
+                              defaultValue={link.relevanceNote}
+                              maxLength={1000}
+                            />
+                          </label>
+                        </div>
+                      ))}
+                    </fieldset>
                     <button>旧版を保持して新版を作成</button>
                   </form>
                   <form className="form" onSubmit={(e) => action(e, g)}>
