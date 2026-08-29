@@ -115,7 +115,6 @@ describe("goal repository confidentiality boundary", () => {
         { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
       ],
     } as Principal;
-    await new GoalRepository(db as unknown as D1Database).list(p, "member-a");
     await expect(
       new GoalRepository(db as unknown as D1Database).action(
         p,
@@ -131,14 +130,58 @@ describe("goal repository confidentiality boundary", () => {
     expect(protectedSql).toContain("g.created_by=?");
     expect(protectedSql).toContain("record_access_grants a");
     expect(protectedSql).toContain("a.expires_at");
+  });
 
-    const historySql = sql.find((q) =>
-      q.includes("FROM goal_versions v JOIN goals g ON g.id=v.goal_id"),
+  it("applies the version ACL in the history query issued by list", async () => {
+    const issued: { query: string; bindings: unknown[] }[] = [];
+    const db = {
+      prepare(query: string) {
+        const statement = { query, bindings: [] as unknown[] };
+        issued.push(statement);
+        return {
+          bind(...bindings: unknown[]) {
+            statement.bindings = bindings;
+            return this;
+          },
+          async first() {
+            return query.includes("SELECT h.unit_id")
+              ? { unit_id: "unit-a" }
+              : null;
+          },
+          async all() {
+            return {
+              results: query.includes("SELECT g.*,v.title")
+                ? [{ id: "goal-a", current_version_id: "version-current" }]
+                : [],
+            };
+          },
+        };
+      },
+      async batch() {
+        return [];
+      },
+    };
+    const p = {
+      actorId: "actor-a",
+      roles: ["UL"],
+      capabilities: ["UNIT_EDIT_SCOPED"],
+      globalUnitRead: false,
+      unitScopes: [
+        { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
+      ],
+    } as Principal;
+
+    await new GoalRepository(db as unknown as D1Database).list(p, "member-a");
+
+    const history = issued.find(({ query }) =>
+      query.includes("FROM goal_versions v JOIN goals g ON g.id=v.goal_id"),
     );
-    expect(historySql).toContain("v.visibility='UL_AND_EXEC'");
-    expect(historySql).toContain("g.created_by=?");
-    expect(historySql).toContain("a.resource_id=v.id");
-    expect(historySql).toContain("a.expires_at");
+    expect(history).toBeDefined();
+    expect(history?.query).toContain("v.visibility='UL_AND_EXEC'");
+    expect(history?.query).toContain("g.created_by=?");
+    expect(history?.query).toContain("a.resource_id=v.id");
+    expect(history?.query).toContain("a.expires_at");
+    expect(history?.bindings).toEqual(["goal-a", "actor-a", "actor-a"]);
   });
 
   it("maps only the database CAS signal to VERSION_CONFLICT", async () => {
