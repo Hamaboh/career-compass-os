@@ -137,6 +137,11 @@ export default function Detail() {
         <p>
           <a href={`/members/${id}/goals`}>目標・SMARTを開く</a>
         </p>
+        <p>
+          <a href={`/members/${id}/support`}>
+            進捗・振り返り・1on1・通知を開く
+          </a>
+        </p>
         <p role="status" aria-live="polite">
           {message}
         </p>

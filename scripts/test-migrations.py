@@ -325,7 +325,7 @@ except sqlite3.IntegrityError:
     pass
 try:
     connection.execute(
-        "INSERT INTO action_items VALUES('bad-action',?,'wrong-member',?,'Synthetic action',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-01-01')",
+        "INSERT INTO action_items VALUES('bad-action',?,'wrong-member',?,'Synthetic action',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-01-01',1)",
         (goal_version, ACTOR),
     )
     raise AssertionError("cross-owner action was accepted")
@@ -478,11 +478,11 @@ assert connection.execute("SELECT COUNT(*) FROM goal_revision_guards").fetchone(
 
 # Attachments to superseded revisions are rejected for both actions and evidence.
 try:
-    connection.execute("INSERT INTO action_items VALUES('old-action',?,?,?,'Old',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01')", (goal_version, MEMBER, ACTOR))
+    connection.execute("INSERT INTO action_items VALUES('old-action',?,?,?,'Old',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01',1)", (goal_version, MEMBER, ACTOR))
     raise AssertionError("action attached to old revision")
 except sqlite3.IntegrityError:
     pass
-connection.execute("INSERT INTO action_items VALUES('new-action','revision-ok',?,?, 'New',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01')", (MEMBER, ACTOR))
+connection.execute("INSERT INTO action_items VALUES('new-action','revision-ok',?,?, 'New',NULL,'TODO',0,NULL,'UL_OBSERVATION','2026-02-01',1)", (MEMBER, ACTOR))
 try:
     connection.execute("INSERT INTO evidence VALUES('old-evidence','new-action',?,?, 'NOTE','Old revision',NULL,NULL,'UNVERIFIED','UL_OBSERVATION',?,'2026-02-01')", (goal_version, MEMBER, ACTOR))
     raise AssertionError("evidence attached to old revision")
@@ -525,3 +525,123 @@ assert page_sizes == [25, 25, 2]
 assert len(seen) == len(set(seen)) == 52
 
 print("empty, I1-upgrade, and atomic history integration checks passed")
+
+# I5 continuous-support constraints: current goal revision, Member-owned
+# indicators, confidential ACL types, idempotency and atomic rollback.
+connection = fixture()
+goal_id, version_1, version_2 = "i5-goal", "i5-version-1", "i5-version-2"
+connection.execute(
+    "INSERT INTO goals VALUES(?,?,?,?,NULL,'DRAFT','MEMBER',1,?,?,?)",
+    (goal_id, MEMBER, UNIT_A, None, ACTOR, "2026-08-01", "2026-08-01"),
+)
+connection.execute(
+    "INSERT INTO goal_versions VALUES(?,?,1,'DIRECT_GOAL','I5 synthetic','','2026-12-01','Synthetic evidence','monthly','DRAFT',NULL,'MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,?)",
+    (version_1, goal_id, ACTOR, "2026-08-01"),
+)
+connection.execute("UPDATE goals SET current_version_id=? WHERE id=?", (version_1, goal_id))
+connection.execute(
+    "INSERT INTO progress_entries VALUES('i5-progress',?,?,?,?, 'IN_PROGRESS',40,60,'fact','',NULL,'MEMBER_STATEMENT','CONFIDENTIAL','AI_SEND_PROHIBITED',?,'2026-08-02')",
+    (goal_id, version_1, MEMBER, UNIT_A, ACTOR),
+)
+connection.execute(
+    "INSERT INTO record_access_grants VALUES('i5-progress-acl','PROGRESS_ENTRY','i5-progress',?,'synthetic review','2026-12-01',?,'2026-08-02')",
+    (OTHER_ACTOR, ACTOR),
+)
+try:
+    connection.execute(
+        "INSERT INTO goal_indicators VALUES('bad-indicator',?,?,?,?, 'WHY_SATISFACTION',50,'AI_REFERENCE','',?,'2026-08-02')",
+        (goal_id, version_1, MEMBER, UNIT_A, ACTOR),
+    )
+    raise AssertionError("AI was allowed to assert a Member self-report")
+except sqlite3.IntegrityError:
+    pass
+connection.execute(
+    "INSERT INTO goal_indicators VALUES('smart-reference',?,?,?,?, 'SMART_QUALITY',50,'AI_REFERENCE','reference only',?,'2026-08-02')",
+    (goal_id, version_1, MEMBER, UNIT_A, ACTOR),
+)
+
+connection.execute(
+    "INSERT INTO goal_versions VALUES(?,?,2,'DIRECT_GOAL','I5 revised','','2026-12-01','Synthetic evidence','monthly','DRAFT','changed','MEMBER_STATEMENT','NORMAL','UL_AND_EXEC','AI_SEND_ALLOWED',?,NULL,?)",
+    (version_2, goal_id, ACTOR, "2026-08-03"),
+)
+connection.execute("UPDATE goals SET current_version_id=?,version=2 WHERE id=?", (version_2, goal_id))
+try:
+    connection.execute(
+        "INSERT INTO progress_entries VALUES('old-revision-progress',?,?,?,?, 'IN_PROGRESS',50,NULL,'','','2026-08-10','UL_OBSERVATION','NORMAL','AI_SEND_ALLOWED',?,'2026-08-03')",
+        (goal_id, version_1, MEMBER, UNIT_A, ACTOR),
+    )
+    raise AssertionError("progress attached to a superseded revision")
+except sqlite3.IntegrityError:
+    pass
+
+meeting = "i5-one-on-one"
+connection.execute(
+    "INSERT INTO one_on_ones VALUES(?,?,?,?,?,NULL,'SCHEDULED','Synthetic',NULL,1,'2026-08-03','2026-08-03')",
+    (meeting, MEMBER, UNIT_A, ACTOR, "2026-08-10T00:00:00Z"),
+)
+connection.execute(
+    "INSERT INTO one_on_one_entries VALUES('i5-entry',?,?,'MEMBER_STATEMENT','Synthetic words','MEMBER_STATEMENT','CONFIDENTIAL','AI_SEND_PROHIBITED',0,NULL,NULL,NULL,?,'2026-08-03')",
+    (meeting, version_2, ACTOR),
+)
+try:
+    connection.execute(
+        "INSERT INTO one_on_one_entries VALUES('i5-fake-confirmation',?,?,'AGREEMENT','Synthetic agreement','MEMBER_CONFIRMED','NORMAL','AI_SEND_ALLOWED',1,NULL,NULL,NULL,?,'2026-08-03')",
+        (meeting, version_2, ACTOR),
+    )
+    raise AssertionError("Member confirmation without evidence was accepted")
+except sqlite3.IntegrityError:
+    pass
+connection.execute(
+    "INSERT INTO record_access_grants VALUES('i5-entry-acl','ONE_ON_ONE_ENTRY','i5-entry',?,'synthetic review','2026-12-01',?,'2026-08-03')",
+    (OTHER_ACTOR, ACTOR),
+)
+try:
+    transaction(
+        connection,
+        lambda: (
+            connection.execute("UPDATE one_on_ones SET version=2 WHERE id=? AND version=1", (meeting,)),
+            connection.execute("INSERT INTO audit_events VALUES('bad-audit','I5','2026-08-03',?,'one_on_one',?,'INVALID','bad','rid','{}')", (ACTOR, meeting)),
+        ),
+    )
+    raise AssertionError("one-on-one update survived audit failure")
+except sqlite3.IntegrityError:
+    pass
+assert connection.execute("SELECT version FROM one_on_ones WHERE id=?", (meeting,)).fetchone()[0] == 1
+
+rule = "i5-reminder"
+connection.execute(
+    "INSERT INTO reminder_rules VALUES(?,?,?,?,?,'GOAL_UPDATE',?,7,'2026-08-04',0,1,1,1,?,'2026-08-03','2026-08-03')",
+    (rule, MEMBER, UNIT_A, "GOAL", goal_id, ACTOR, ACTOR),
+)
+try:
+    connection.execute(
+        "INSERT INTO reminder_rules VALUES('i5-wrong-reminder',?,?,?,?, 'ACTION_DUE',?,7,'2026-08-04',0,1,1,1,?,'2026-08-03','2026-08-03')",
+        (MEMBER, UNIT_A, "GOAL", goal_id, ACTOR, ACTOR),
+    )
+    raise AssertionError("action reminder was attached to a goal")
+except sqlite3.IntegrityError:
+    pass
+try:
+    connection.execute(
+        "INSERT INTO reminder_rules VALUES('i5-reminder-duplicate',?,?,?,?, 'GOAL_UPDATE',?,7,'2026-08-04',0,1,1,1,?,'2026-08-03','2026-08-03')",
+        (MEMBER, UNIT_A, "GOAL", goal_id, ACTOR, ACTOR),
+    )
+    raise AssertionError("duplicate reminder rule was accepted")
+except sqlite3.IntegrityError:
+    pass
+
+connection.execute(
+    "INSERT INTO notifications VALUES('i5-notification',?,?,?,?,?,?,?,'PENDING',NULL,'i5-dedupe','2026-08-03')",
+    (ACTOR, MEMBER, UNIT_A, "GOAL_UPDATE", "GOAL", goal_id, "2026-08-04"),
+)
+try:
+    connection.execute(
+        "INSERT INTO notifications VALUES('i5-notification-duplicate',?,?,?,?,?,?,?,'PENDING',NULL,'i5-dedupe','2026-08-03')",
+        (ACTOR, MEMBER, UNIT_A, "GOAL_UPDATE", "GOAL", goal_id, "2026-08-04"),
+    )
+    raise AssertionError("duplicate notification was accepted")
+except sqlite3.IntegrityError:
+    pass
+
+assert list(connection.execute("PRAGMA foreign_key_check")) == []
+print("I5 revision, ACL, indicator, idempotency and rollback checks passed")

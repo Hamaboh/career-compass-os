@@ -4,6 +4,7 @@ import { SelfUnderstandingRepository } from "../self-understanding/repository";
 import type { z } from "zod";
 import type {
   actionInput,
+  actionStatusInput,
   evidenceInput,
   finalizeInput,
   goalInput,
@@ -383,7 +384,9 @@ export class GoalRepository {
     const now = new Date().toISOString();
     await this.db.batch([
       this.db
-        .prepare("INSERT INTO action_items VALUES(?,?,?,?,?,?,'TODO',0,?,?,?)")
+        .prepare(
+          "INSERT INTO action_items VALUES(?,?,?,?,?,?,'TODO',0,?,?,?,1)",
+        )
         .bind(
           crypto.randomUUID(),
           g.current_version_id,
@@ -436,6 +439,53 @@ export class GoalRepository {
         409,
         "evidence_integrity_conflict",
       );
+    }
+    return this.list(p, memberId);
+  }
+  async updateAction(
+    p: Principal,
+    memberId: string,
+    goalId: string,
+    actionId: string,
+    input: z.infer<typeof actionStatusInput>,
+    rid: string,
+  ) {
+    const goal = await this.owned(p, memberId, goalId, true);
+    if (goal.version !== input.goalVersion)
+      throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    const now = new Date().toISOString();
+    try {
+      const results = await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE action_items SET status=?,version=version+1 WHERE id=? AND goal_version_id=? AND member_id=? AND version=?",
+          )
+          .bind(
+            input.status,
+            actionId,
+            goal.current_version_id,
+            memberId,
+            input.actionVersion,
+          ),
+        this.db
+          .prepare(
+            "INSERT INTO audit_events(id,event_type,occurred_at,actor_id,target_type,target_id,outcome,reason,request_id,metadata_json) SELECT ?,?,?,?,?,?,'SUCCEEDED','operation_succeeded',?,'{}' WHERE changes()=1",
+          )
+          .bind(
+            crypto.randomUUID(),
+            "GOAL_ACTION_UPDATED",
+            now,
+            p.actorId,
+            "action",
+            actionId,
+            rid,
+          ),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1)
+        throw new MemberError("VERSION_CONFLICT", 409, "version_conflict");
+    } catch (error) {
+      if (error instanceof MemberError) throw error;
+      throw new MemberError("VERSION_CONFLICT", 409, "revision_conflict");
     }
     return this.list(p, memberId);
   }

@@ -22,7 +22,7 @@ type Goal = {
   visibility: "UL_AND_EXEC" | "UL_ONLY";
   ai_send_policy: "AI_SEND_ALLOWED" | "AI_SEND_PROHIBITED";
   versions: { version_no: number; title: string; status: string }[];
-  actions: { id: string; title: string; status: string }[];
+  actions: { id: string; title: string; status: string; version: number }[];
   evidence: { id: string; description: string; kind: string }[];
   links: { link_type: string; reference_id: string; relevance_note: string }[];
 };
@@ -49,10 +49,10 @@ export default function Goals() {
       })
       .catch(() => setMessage("目標を表示できません。"));
   }, [url]);
-  async function send(path: string, body: unknown) {
+  async function send(path: string, body: unknown, method = "POST") {
     setMessage("保存中です…");
     const r = await fetch(path, {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json", "x-csrf-token": token() },
       body: JSON.stringify(body),
     });
@@ -123,6 +123,24 @@ export default function Goals() {
       verificationStatus: "UNVERIFIED",
       provenanceType: "UL_OBSERVATION",
     });
+  }
+  function updateAction(
+    e: FormEvent<HTMLFormElement>,
+    g: Goal,
+    actionId: string,
+    actionVersion: number,
+  ) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    void send(
+      `${url}/${g.id}/actions/${actionId}`,
+      {
+        goalVersion: g.version,
+        actionVersion,
+        status: f.get("status"),
+      },
+      "PATCH",
+    );
   }
   function revise(e: FormEvent<HTMLFormElement>, g: Goal) {
     e.preventDefault();
@@ -371,11 +389,36 @@ export default function Goals() {
                 </form>
               )}
               <h4>Action plan / Evidence</h4>
-              <p>
-                {g.actions.length
-                  ? g.actions.map((a) => `${a.title}（${a.status}）`).join("、")
-                  : "行動はまだありません。APIから現行版に追加できます。"}
-              </p>
+              {g.actions.length ? (
+                <ul>
+                  {g.actions.map((action) => (
+                    <li key={action.id}>
+                      {action.title}（{action.status}）
+                      {data.canEdit && (
+                        <form
+                          className="form"
+                          onSubmit={(event) =>
+                            updateAction(event, g, action.id, action.version)
+                          }
+                        >
+                          <label>
+                            行動状態
+                            <select name="status" defaultValue={action.status}>
+                              <option value="TODO">未着手</option>
+                              <option value="DOING">進行中</option>
+                              <option value="DONE">完了</option>
+                              <option value="CANCELLED">中止</option>
+                            </select>
+                          </label>
+                          <button>行動状態を更新</button>
+                        </form>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>行動はまだありません。現行版へ追加できます。</p>
+              )}
               <ul>
                 {g.evidence.map((e) => (
                   <li key={e.id}>

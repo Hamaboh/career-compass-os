@@ -114,6 +114,13 @@ export const actionInput = z.object({
   expectedEvidence: z.string().trim().max(1000).nullable().optional(),
   provenanceType: provenance,
 });
+export const actionStatusInput = z
+  .object({
+    goalVersion: z.number().int().positive(),
+    actionVersion: z.number().int().positive(),
+    status: z.enum(["TODO", "DOING", "DONE", "CANCELLED"]),
+  })
+  .strict();
 export const evidenceInput = z.object({
   version: z.number().int().positive(),
   actionId: id,
