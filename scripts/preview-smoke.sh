@@ -25,3 +25,23 @@ grep -qi '^x-content-type-options: nosniff' /tmp/career-compass-health.headers
 grep -qi '^cache-control: no-store' /tmp/career-compass-health.headers
 grep -q '"status":"ok"' /tmp/career-compass-health.body
 curl --fail --silent http://127.0.0.1:8787/ | grep -q '準備中'
+
+public_status=$(curl --silent --show-error --dump-header /tmp/career-compass-share.headers \
+  --output /tmp/career-compass-share.body --write-out '%{http_code}' \
+  http://127.0.0.1:8787/s/invalid)
+share_failure() {
+  echo "Public share smoke failed with status $public_status" >&2
+  cat /tmp/career-compass-share.headers >&2
+  cat /tmp/career-compass-share.body >&2
+  exit 1
+}
+test "$public_status" = '404' || share_failure
+grep -qi '^cache-control:.*private' /tmp/career-compass-share.headers || share_failure
+grep -qi '^cache-control:.*no-store' /tmp/career-compass-share.headers || share_failure
+grep -qi "^content-security-policy: default-src 'none'" /tmp/career-compass-share.headers || share_failure
+grep -qi '^x-robots-tag: noindex, nofollow, noarchive' /tmp/career-compass-share.headers || share_failure
+if grep -qi '^set-cookie:' /tmp/career-compass-share.headers; then
+  echo "Public share endpoint issued an application cookie" >&2
+  exit 1
+fi
+grep -q '共有内容を表示できません' /tmp/career-compass-share.body

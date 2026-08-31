@@ -4,19 +4,27 @@ import { contentSecurityPolicy } from "@/lib/security-headers";
 
 export function middleware(request: NextRequest) {
   const requestId = createRequestId(request.headers.get("x-request-id"));
-  const nonce = crypto.randomUUID().replaceAll("-", "");
-  const csp = contentSecurityPolicy(
-    nonce,
-    process.env.NODE_ENV === "production",
-  );
+  const publicShare = request.nextUrl.pathname.startsWith("/s/");
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", csp);
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("x-request-id", requestId);
-  response.headers.set("Content-Security-Policy", csp);
-  if (!request.cookies.get("cc_csrf"))
+
+  const responseHeaders = new Headers({ "x-request-id": requestId });
+  if (!publicShare) {
+    const nonce = crypto.randomUUID().replaceAll("-", "");
+    const csp = contentSecurityPolicy(
+      nonce,
+      process.env.NODE_ENV === "production",
+    );
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", csp);
+    responseHeaders.set("Content-Security-Policy", csp);
+  }
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+    headers: responseHeaders,
+  });
+  if (!publicShare && !request.cookies.get("cc_csrf"))
     response.cookies.set("cc_csrf", crypto.randomUUID().replaceAll("-", ""), {
       httpOnly: false,
       sameSite: "strict",
