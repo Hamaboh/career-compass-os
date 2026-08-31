@@ -795,10 +795,10 @@ export class ShareRepository {
   }
 
   async publicHtml(token: string, requestId: string, clientId = "unknown") {
-    const now = new Date().toISOString();
-    await this.enforcePublicRateLimit(clientId, now);
     if (!/^[A-Za-z0-9_-]{43}$/.test(token))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "share_not_found");
+    const now = new Date().toISOString();
+    await this.enforcePublicRateLimit(clientId, now);
     const hash = await digest(token);
     const row = await this.db
       .prepare(
