@@ -11,6 +11,7 @@ import { MemberService } from "./service";
 export interface MemberRuntime {
   db: D1Database;
   verifier: AccessJwtVerifier;
+  privateFiles?: Pick<R2Bucket, "get" | "put" | "delete">;
 }
 export async function withMemberRuntime(
   request: Request,
