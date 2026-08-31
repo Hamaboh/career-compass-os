@@ -36,7 +36,8 @@ share_failure() {
   exit 1
 }
 test "$public_status" = '404' || share_failure
-grep -qi '^cache-control: private, no-store' /tmp/career-compass-share.headers || share_failure
+grep -qi '^cache-control:.*private' /tmp/career-compass-share.headers || share_failure
+grep -qi '^cache-control:.*no-store' /tmp/career-compass-share.headers || share_failure
 grep -qi "^content-security-policy: default-src 'none'" /tmp/career-compass-share.headers || share_failure
 grep -qi '^x-robots-tag: noindex, nofollow, noarchive' /tmp/career-compass-share.headers || share_failure
 if grep -qi '^set-cookie:' /tmp/career-compass-share.headers; then
