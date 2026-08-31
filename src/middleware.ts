@@ -16,7 +16,10 @@ export function middleware(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("x-request-id", requestId);
   response.headers.set("Content-Security-Policy", csp);
-  if (!request.cookies.get("cc_csrf"))
+  if (
+    !request.nextUrl.pathname.startsWith("/s/") &&
+    !request.cookies.get("cc_csrf")
+  )
     response.cookies.set("cc_csrf", crypto.randomUUID().replaceAll("-", ""), {
       httpOnly: false,
       sameSite: "strict",
