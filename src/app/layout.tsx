@@ -16,6 +16,9 @@ export default function RootLayout({
           <strong>Career Compass OS</strong>{" "}
           <Link href="/members" style={{ color: "white", marginLeft: "2rem" }}>
             Member
+          </Link>{" "}
+          <Link href="/executive" style={{ color: "white", marginLeft: "2rem" }}>
+            全Unitレビュー
           </Link>
         </header>
         {children}
