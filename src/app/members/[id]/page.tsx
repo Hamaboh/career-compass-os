@@ -142,6 +142,9 @@ export default function Detail() {
             進捗・振り返り・1on1・通知を開く
           </a>
         </p>
+        <p>
+          <a href={`/members/${id}/ai`}>AI支援の匿名化プレビューを開く</a>
+        </p>
         <p role="status" aria-live="polite">
           {message}
         </p>

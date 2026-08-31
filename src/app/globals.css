@@ -77,3 +77,15 @@ td {
 .form input {
   width: 100%;
 }
+.form textarea,
+.form select {
+  width: 100%;
+}
+textarea {
+  font: inherit;
+  padding: 0.65rem;
+}
+dt {
+  font-weight: 700;
+  margin-top: 0.75rem;
+}

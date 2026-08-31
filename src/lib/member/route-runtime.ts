@@ -10,9 +10,11 @@ export async function memberRuntime(): Promise<MemberRuntime> {
     AUTH_MODE?: string;
     ACCESS_ISSUER?: string;
     ACCESS_AUDIENCE?: string;
+    PRIVATE_FILES: Pick<R2Bucket, "get" | "put" | "delete">;
   };
   return {
     db: env.DB,
     verifier: createAccessJwtVerifier(parseEnvironment(env)),
+    privateFiles: env.PRIVATE_FILES,
   };
 }
