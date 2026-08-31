@@ -37,7 +37,9 @@ export function scopedReviewWrite(
   const inScope =
     principal.capabilities.includes("UNIT_EDIT_SCOPED") &&
     principal.unitScopes.some((scope) => scope.unitId === unitId);
-  if (!inScope || (disposition && disposition !== "UL_RESPONSE"))
+  if (!inScope)
+    throw new AuthError("RESOURCE_NOT_FOUND", 404, "review_not_visible");
+  if (disposition && disposition !== "UL_RESPONSE")
     throw new AuthError("CAPABILITY_FORBIDDEN", 403, "review_action_not_allowed");
   return new ExecutiveRepository(db);
 }
