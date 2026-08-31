@@ -124,7 +124,7 @@ describe("Implementation 8 policy and review boundaries", () => {
     expect(scopedReviewWrite(db, ul, "unit-a", "UL_RESPONSE")).toBeDefined();
     expect(() =>
       scopedReviewWrite(db, ul, "unit-b", "UL_RESPONSE"),
-    ).toThrow(/CAPABILITY_FORBIDDEN/);
+    ).toThrow(/RESOURCE_NOT_FOUND/);
     expect(() =>
       scopedReviewWrite(db, ul, "unit-a", "CONFIRM"),
     ).toThrow(/CAPABILITY_FORBIDDEN/);
