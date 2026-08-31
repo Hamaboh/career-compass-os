@@ -63,6 +63,7 @@ export default function ExecutivePage() {
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
   const [items, setItems] = useState<PolicyItem[]>([]);
   const [message, setMessage] = useState("読み込み中です…");
+  const [calculation, setCalculation] = useState<Record<string, unknown> | null>(null);
 
   async function load() {
     try {
@@ -140,6 +141,67 @@ export default function ExecutivePage() {
     });
   }
 
+  function registerVersion(event: FormEvent<HTMLFormElement>, document: Policy) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void send("/api/v1/policy-documents/" + document.id + "/versions", {
+      documentVersion: document.version,
+      versionNo: form.get("versionNo"),
+      effectiveFrom: form.get("effectiveFrom"),
+      effectiveTo: form.get("effectiveTo") || null,
+      status: form.get("status"),
+      checksum: form.get("checksum"),
+      items: [{
+        category: form.get("category"),
+        code: form.get("code"),
+        title: form.get("title"),
+        description: form.get("description"),
+        criteria: {},
+      }],
+    });
+  }
+
+  async function calculate(path: string, body: unknown) {
+    setMessage("参考計算中です…");
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": csrf() },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      setMessage("参考計算できませんでした。入力と権限を確認してください。");
+      return;
+    }
+    const envelope = (await response.json()) as { data: Record<string, unknown> };
+    setCalculation(envelope.data);
+    setMessage("参考計算しました。正式評価には使用しません。");
+  }
+
+  function businessDay(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const holidays = String(form.get("holidays") ?? "")
+      .split(/[\s,]+/)
+      .filter(Boolean);
+    void calculate("/api/v1/calculations/business-day", {
+      targetMonth: form.get("targetMonth"),
+      calendarVersion: form.get("calendarVersion"),
+      holidays,
+    });
+  }
+
+  function responseWindow(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void calculate("/api/v1/calculations/response-window", {
+      contactAt: String(form.get("contactAt")) + ":00.000Z",
+      responseAt: form.get("responseAt")
+        ? String(form.get("responseAt")) + ":00.000Z"
+        : null,
+      referenceAt: String(form.get("referenceAt")) + ":00.000Z",
+    });
+  }
+
   function turnover(event: FormEvent<HTMLFormElement>, unitId: string) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -159,6 +221,9 @@ export default function ExecutivePage() {
           機密本文と未承認AI仮説は表示しません。
         </p>
         <p role="status" aria-live="polite">{message}</p>
+        {calculation && (
+          <pre aria-label="参考計算結果">{JSON.stringify(calculation, null, 2)}</pre>
+        )}
       </section>
 
       <section className="panel" aria-labelledby="units-heading">
@@ -243,6 +308,33 @@ export default function ExecutivePage() {
             ))}
           </tbody>
         </table>
+        {documents.map((document) => (
+          <details key={"version-" + document.id}>
+            <summary>{document.source_name}へ不変versionを登録（SYSTEM_ADMIN）</summary>
+            <form className="form" onSubmit={(event) => registerVersion(event, document)}>
+              <label>版番号<input name="versionNo" required /></label>
+              <label>適用開始<input name="effectiveFrom" type="date" required /></label>
+              <label>適用終了<input name="effectiveTo" type="date" /></label>
+              <label>状態
+                <select name="status">
+                  <option value="DRAFT">draft</option>
+                  <option value="ACTIVE">active</option>
+                  <option value="RETIRED">retired</option>
+                </select>
+              </label>
+              <label>SHA-256 checksum<input name="checksum" pattern="[a-f0-9]{64}" required /></label>
+              <fieldset>
+                <legend>項目preview（1件）</legend>
+                <label>Category<input name="category" required /></label>
+                <label>Code<input name="code" required /></label>
+                <label>Title<input name="title" required /></label>
+                <label>Description<textarea name="description" /></label>
+              </fieldset>
+              <p>CategoryがManagementの場合、サーバーが必ずDRAFTとして保存します。</p>
+              <button>versionと項目を登録</button>
+            </form>
+          </details>
+        ))}
         <h3>版・項目preview</h3>
         {versions.map((version) => (
           <article key={version.id}>
@@ -271,6 +363,31 @@ export default function ExecutivePage() {
             <label>参照先<input name="sourceRef" /></label>
             <label>管理責任者<input name="owner" required /></label>
             <button>原本メタデータを登録</button>
+          </form>
+        </details>
+      </section>
+
+      <section className="panel" aria-labelledby="rules-heading">
+        <h2 id="rules-heading">決定論的な参考計算</h2>
+        <p>AIやメール・Slack監視は使用しません。24時間ruleはULが記録した事実だけを入力します。</p>
+        <details>
+          <summary>交通費期限（翌月第2営業日）</summary>
+          <form className="form" onSubmit={businessDay}>
+            <label>対象月<input name="targetMonth" type="month" required /></label>
+            <label>祝日calendar version<input name="calendarVersion" required /></label>
+            <label>日本の祝日（YYYY-MM-DD、空白またはカンマ区切り）
+              <textarea name="holidays" />
+            </label>
+            <button>期限を参考計算</button>
+          </form>
+        </details>
+        <details>
+          <summary>24時間response rule</summary>
+          <form className="form" onSubmit={responseWindow}>
+            <label>連絡日時<input name="contactAt" type="datetime-local" required /></label>
+            <label>応答日時（未応答なら空欄）<input name="responseAt" type="datetime-local" /></label>
+            <label>判定基準日時<input name="referenceAt" type="datetime-local" required /></label>
+            <button>参考イベントを判定</button>
           </form>
         </details>
       </section>
