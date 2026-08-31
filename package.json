@@ -17,7 +17,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts && python3 scripts/test-self-understanding.py",
+    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts tests/continuous-support.test.ts && python3 scripts/test-self-understanding.py && python3 scripts/test-migrations.py",
     "test:migration": "rm -rf .wrangler/state && wrangler d1 migrations apply career-compass-local --local",
     "audit": "pnpm audit --audit-level=high",
     "test:migration:all": "python3 scripts/test-migrations.py && python3 scripts/test-self-understanding.py"

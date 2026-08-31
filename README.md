@@ -4,7 +4,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0のrepository foundationを実装済みです。認証、業務、AI、mail、production接続は未実装です。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜5を実装済みです。継続支援は進捗・振り返り・参考指標・1on1・可変周期リマインダー・D1 outbox・development fake通知まで利用できます。実AI、Gmail、production接続は未実装です。
 
 ## 開発・検証
 
@@ -13,6 +13,8 @@ Node.js `22.22.0`とpnpm `10.28.1`を使用します。`corepack enable`後、`p
 `pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm build:cloudflare`、`pnpm audit --audit-level=high`が標準検証です。`pnpm preview:smoke`はlocal Workersでhealth、request ID、security headerを検証します。local D1/R2 stateとbuild/cacheはGit管理しません。
 
 PRではclean install、上記検証、secret scanを必須とします。previewはpreview専用bindingだけを使います。Production resource作成・deploymentはI0対象外です。rollbackはbindingを確認して直前のreview済みWorkers versionへ`wrangler rollback`するか、直前のreview済みcommitを再deployします。I0にmigrationはありません。詳細は[ADR-0008](docs/decisions/0008-implementation-0-runtime-versions.md)を参照してください。
+
+local/previewの通知は外部サービスへ送らず、`/api/v1/reminder-jobs/run`がログイン利用者自身の期限到来ruleをD1 outboxへ冪等に集約し、`DELIVERED_FAKE`へ遷移させます。Gmail/Cronのproduction設定は後続の運用ゲートで行います。
 
 旧Phase 1〜4、旧Design Freeze、旧補助仕様、旧ADRは履歴資料として残っていますが、現在の実装仕様ではありません。新Phase 0〜5と新Design Freezeを正式仕様とします。
 
