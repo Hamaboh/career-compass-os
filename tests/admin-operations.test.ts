@@ -217,7 +217,77 @@ describe("Implementation 9 admin boundaries", () => {
     expect(issued[0]).toContain("record_access_grants");
     expect(issued[0]).toContain("a.target_type='goal'");
     expect(issued[0]).toContain("q.executive_visible=1");
+    expect(issued[0]).toContain("a.target_type='goal_version'");
     expect(issued[0]).not.toContain("metadata_json");
     expect(issued[0]).not.toContain("reason");
+  });
+
+  it("scans every declared retention data class without auto-executing it", async () => {
+    const issued: string[] = [];
+    const retentionDb = {
+      prepare(sql: string) {
+        issued.push(sql);
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            return null;
+          },
+          async all() {
+            return { results: [] };
+          },
+          async run() {
+            return { meta: { changes: 1 } };
+          },
+        };
+      },
+      async batch() {
+        return [];
+      },
+    } as unknown as D1Database;
+    await new AdminRepository(retentionDb, files).scanRetention(
+      admin,
+      {
+        asOf: "2026-09-01T00:00:00.000Z",
+        idempotencyKey: "retention-scan-2026-09-01",
+      },
+      "request-retention-scan",
+    );
+    const sql = issued.join("\n");
+    expect(sql).toContain("FROM ai_suggestions");
+    expect(sql).toContain("FROM share_tokens");
+    expect(sql).toContain("FROM backup_exports");
+    expect(sql).toContain("FROM audit_events");
+    expect(sql).toContain("FROM members");
+    expect(sql).toContain("NOT EXISTS(SELECT 1 FROM ai_adopted_drafts");
+  });
+
+  it("builds a recoverable row artifact rather than a counts-only manifest", async () => {
+    const backupDb = {
+      prepare(sql: string) {
+        return {
+          async all() {
+            if (sql.startsWith("SELECT * FROM "))
+              return { results: [{ synthetic: sql.slice(14) }] };
+            return { results: [{ object_key: "private/synthetic" }] };
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const repository = new AdminRepository(backupDb, files) as unknown as {
+      backupManifest(sourceTimestamp: string): Promise<{
+        format: string;
+        counts: Record<string, number>;
+        tables: Record<string, Record<string, unknown>[]>;
+      }>;
+    };
+    const artifact = await repository.backupManifest(
+      "2026-09-01T00:00:00.000Z",
+    );
+    expect(artifact.format).toBe("CAREER_COMPASS_RECOVERABLE_BACKUP_V2");
+    expect(artifact.counts.members).toBe(1);
+    expect(artifact.tables.members).toEqual([{ synthetic: "members" }]);
+    expect(artifact.tables.audit_events).toHaveLength(1);
   });
 });

@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -218,16 +219,30 @@ db.execute(
     (admin_b, now),
 )
 db.execute(
-    "UPDATE members SET employee_ref='retired:synthetic',display_name='匿名化済み',version=version+1,updated_at=? WHERE id='member-due'",
-    (now,),
+    "INSERT INTO audit_events VALUES('audit-member','MEMBER_UPDATED',?,?, 'member','member-due','SUCCEEDED','safe','request-member','{}')",
+    (now, admin_a),
+)
+# Retention removes all stable row-level linkage and keeps only a global monthly cohort.
+db.execute(
+    "UPDATE audit_events SET target_id='retired:unlinked',metadata_json='{}' WHERE id='audit-member'"
 )
 db.execute(
-    "UPDATE self_analysis_entries SET response_text=CASE WHEN response_status='ANSWERED' THEN '[匿名化済み]' ELSE NULL END,version=version+1,updated_at=? WHERE session_id='session-due'",
+    """INSERT INTO anonymous_member_statistics(
+      bucket_month,anonymized_members,goal_count,progress_count,reflection_count,indicator_count,indicator_value_sum,updated_at
+    ) SELECT '2026-09',1,(SELECT COUNT(*) FROM goals WHERE member_id='member-due'),0,0,0,0,?
+    WHERE EXISTS(SELECT 1 FROM members WHERE id='member-due')""",
     (now,),
 )
-db.execute("UPDATE goal_versions SET title='匿名化済み',description='',success_criteria='匿名化済み' WHERE id='goal-version-due'")
-db.execute("UPDATE goal_policy_links SET relevance_note='' WHERE id='policy-link-due'")
-db.execute("UPDATE review_comments SET body='匿名化済み' WHERE id='comment-due'")
+db.execute("DELETE FROM review_comments WHERE id='comment-due'")
+db.execute("DELETE FROM review_requests WHERE id='review-due'")
+db.execute("DELETE FROM goal_policy_links WHERE id='policy-link-due'")
+db.execute("DELETE FROM self_analysis_entries WHERE session_id='session-due'")
+db.execute("DELETE FROM self_analysis_sessions WHERE id='session-due'")
+db.execute("UPDATE goals SET current_version_id=NULL WHERE id='goal-due'")
+db.execute("DELETE FROM goal_versions WHERE id='goal-version-due'")
+db.execute("DELETE FROM goals WHERE id='goal-due'")
+db.execute("DELETE FROM member_unit_history WHERE member_id='member-due'")
+db.execute("DELETE FROM members WHERE id='member-due'")
 db.execute(
     "UPDATE retention_actions SET status='EXECUTED',result_json='{}',updated_at=? WHERE id='retention-a'",
     (now,),
@@ -237,24 +252,20 @@ try:
     raise AssertionError("retention terminal state changed")
 except sqlite3.IntegrityError:
     pass
-assert db.execute(
-    "SELECT display_name,employee_ref FROM members WHERE id='member-due'"
-).fetchone() == ("匿名化済み", "retired:synthetic")
-assert db.execute(
-    "SELECT response_text FROM self_analysis_entries WHERE id='entry-answered'"
-).fetchone() == ("[匿名化済み]",)
-assert db.execute(
-    "SELECT response_text FROM self_analysis_entries WHERE id='entry-unanswered'"
-).fetchone() == (None,)
-assert db.execute(
-    "SELECT COUNT(*) FROM member_unit_history WHERE member_id='member-due'"
-).fetchone() == (1,)
-assert db.execute(
-    "SELECT relevance_note FROM goal_policy_links WHERE id='policy-link-due'"
-).fetchone() == ("",)
-assert db.execute(
-    "SELECT body FROM review_comments WHERE id='comment-due'"
-).fetchone() == ("匿名化済み",)
+assert db.execute("SELECT id FROM members WHERE id='member-due'").fetchone() is None
+assert db.execute("SELECT id FROM self_analysis_entries WHERE id='entry-answered'").fetchone() is None
+assert db.execute("SELECT id FROM goals WHERE id='goal-due'").fetchone() is None
+assert db.execute("SELECT id FROM goal_policy_links WHERE id='policy-link-due'").fetchone() is None
+assert db.execute("SELECT id FROM review_comments WHERE id='comment-due'").fetchone() is None
+assert db.execute("SELECT target_id FROM audit_events WHERE id='audit-member'").fetchone() == (
+    "retired:unlinked",
+)
+stat = db.execute(
+    "SELECT anonymized_members,goal_count FROM anonymous_member_statistics WHERE bucket_month='2026-09'"
+).fetchone()
+assert stat == (1, 1)
+columns = [row[1] for row in db.execute("PRAGMA table_info(anonymous_member_statistics)")]
+assert not {"member_id", "unit_id", "employee_ref", "source_id"}.intersection(columns)
 
 # Ready backup and restore evidence are immutable.
 db.execute(
@@ -331,5 +342,53 @@ finally:
     os.unlink(backup_path)
 elapsed_minutes = (datetime.now(timezone.utc) - source_started).total_seconds() / 60
 assert elapsed_minutes < 1440
+
+# The application V2 row artifact is independently restorable, not counts-only.
+table_names = [
+    row[0]
+    for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+]
+artifact_tables = {}
+for table in table_names:
+    cursor = db.execute(f'SELECT * FROM "{table}"')
+    columns = [description[0] for description in cursor.description]
+    artifact_tables[table] = [dict(zip(columns, row)) for row in cursor.fetchall()]
+artifact = {
+    "format": "CAREER_COMPASS_RECOVERABLE_BACKUP_V2",
+    "schemaVersion": "0013",
+    "sourceTimestamp": now,
+    "counts": {table: len(rows) for table, rows in artifact_tables.items()},
+    "tables": artifact_tables,
+    "r2Keys": [],
+}
+artifact_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+json.dump(artifact, artifact_handle)
+artifact_handle.close()
+restored_handle = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+restored_artifact_path = restored_handle.name
+restored_handle.close()
+os.unlink(restored_artifact_path)
+try:
+    subprocess.run(
+        [
+            "python3",
+            "scripts/restore-backup-artifact.py",
+            artifact_handle.name,
+            restored_artifact_path,
+        ],
+        check=True,
+    )
+    restored = sqlite3.connect(restored_artifact_path)
+    assert list(restored.execute("PRAGMA foreign_key_check")) == []
+    assert restored.execute("SELECT COUNT(*) FROM app_users").fetchone()[0] == len(
+        artifact_tables["app_users"]
+    )
+    restored.close()
+finally:
+    os.unlink(artifact_handle.name)
+    if os.path.exists(restored_artifact_path):
+        os.unlink(restored_artifact_path)
 assert list(db.execute("PRAGMA foreign_key_check")) == []
 print("Implementation 9 ACL, retention, idempotency, rollback and restore checks passed")

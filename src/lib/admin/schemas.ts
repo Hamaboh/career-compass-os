@@ -93,6 +93,11 @@ export const restoreExerciseInput = z
     environment: z.enum(["LOCAL", "PREVIEW"]),
     startedAt: iso,
     completedAt: iso,
+    restoredArtifactChecksum: z.string().regex(/^[a-f0-9]{64}$/),
+    restoredCounts: z.record(
+      z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+      z.number().int().nonnegative(),
+    ),
     authorizationSmokeVerified: z.boolean(),
     notes: z.string().trim().max(1000),
   })
@@ -100,6 +105,10 @@ export const restoreExerciseInput = z
   .refine((value) => value.completedAt >= value.startedAt, {
     path: ["completedAt"],
     message: "完了日時は開始日時以降にしてください",
+  })
+  .refine((value) => Object.keys(value.restoredCounts).length <= 100, {
+    path: ["restoredCounts"],
+    message: "復元件数は100 table以内にしてください",
   });
 
 export const quotaInput = z

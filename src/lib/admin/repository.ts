@@ -22,23 +22,74 @@ type BackupManifest = {
   schemaVersion: string;
   sourceTimestamp: string;
   counts: Record<string, number>;
+  tables: Record<string, Row[]>;
   r2Keys: string[];
 };
 
 const BACKUP_TABLES = [
+  "action_items",
+  "ai_adopted_drafts",
+  "ai_budget_ledger",
   "app_users",
-  "units",
-  "members",
-  "goals",
-  "goal_versions",
-  "progress_entries",
-  "reflections",
-  "one_on_ones",
-  "one_on_one_entries",
   "ai_requests",
+  "ai_responses",
   "ai_suggestions",
-  "share_snapshots",
+  "anonymous_member_statistics",
+  "app_user_access_versions",
   "audit_events",
+  "backup_exports",
+  "evidence",
+  "future_vision_evidence_refs",
+  "future_vision_versions",
+  "goal_confirmations",
+  "goal_indicators",
+  "goal_links",
+  "goal_policy_links",
+  "goal_revision_guards",
+  "goal_versions",
+  "goals",
+  "holiday_calendars",
+  "holidays",
+  "jobs",
+  "member_status_history",
+  "member_unit_history",
+  "members",
+  "model_policies",
+  "notification_items",
+  "notifications",
+  "one_on_one_entries",
+  "one_on_ones",
+  "operational_job_runs",
+  "operational_settings",
+  "policy_documents",
+  "policy_items",
+  "policy_versions",
+  "progress_entries",
+  "prompt_versions",
+  "quota_snapshots",
+  "record_access_grants",
+  "reflections",
+  "reminder_rules",
+  "restore_exercises",
+  "retention_actions",
+  "review_comments",
+  "review_requests",
+  "roles",
+  "self_analysis_entries",
+  "self_analysis_entry_history",
+  "self_analysis_question_history",
+  "self_analysis_questions",
+  "self_analysis_session_history",
+  "self_analysis_sessions",
+  "share_confirmations",
+  "share_snapshots",
+  "share_tokens",
+  "smart_audits",
+  "support_suggestions",
+  "turnover_calculations",
+  "units",
+  "user_roles",
+  "user_unit_scopes",
 ] as const;
 
 async function sha256(value: string) {
@@ -507,6 +558,17 @@ export class AdminRepository {
           a.event_type NOT IN ('GOAL_PROGRESS_RECORDED','GOAL_REFLECTION_RECORDED','SUPPORT_PROPOSALS_CREATED')
           OR a.actor_id=?
         )) OR
+        (a.target_type='goal_version' AND EXISTS(
+          SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id
+          WHERE v.id=a.target_id AND (
+            (v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC') OR
+            g.created_by=? OR EXISTS(
+              SELECT 1 FROM record_access_grants acl
+              WHERE acl.resource_type='GOAL_VERSION' AND acl.resource_id=v.id AND acl.actor_id=?
+                AND (acl.expires_at IS NULL OR acl.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            )
+          )
+        )) OR
         (a.target_type='one_on_one' AND EXISTS(
           SELECT 1 FROM one_on_ones o WHERE o.id=a.target_id AND (o.ul_user_id=? OR ?)
         )) OR
@@ -569,6 +631,8 @@ export class AdminRepository {
         ))
       )`);
       bindings.push(
+        principal.actorId,
+        principal.actorId,
         principal.actorId,
         principal.actorId,
         principal.actorId,
@@ -751,7 +815,13 @@ export class AdminRepository {
       memberId,
       dataClasses: Object.keys(counts),
       recordCounts: counts,
-      statisticsRetained: ["所属履歴", "状態履歴", "集計可能な数値"],
+      statisticsRetained: [
+        "月次匿名化人数",
+        "月次目標・進捗・振り返り件数",
+        "月次指標件数・合計値",
+      ],
+      rowLevelDataRetained: false,
+      stableLinkageRetained: false,
       irreversible: true,
       r2ObjectCount: (counts.shareSnapshots ?? 0) + (counts.aiRequests ?? 0),
     };
@@ -767,26 +837,80 @@ export class AdminRepository {
       .bind(`retention:${principal.actorId}:${input.idempotencyKey}`)
       .first<{ id: string }>();
     if (existing) return this.listRetention();
-    const [members, auditEvents] = await Promise.all([
-      this.db
-        .prepare(
-          "SELECT id,left_on,status FROM members WHERE status IN ('LEFT','OUT_OF_SCOPE') AND left_on IS NOT NULL AND date(left_on)<=date(?,'-1 year') ORDER BY left_on,id LIMIT 50",
-        )
-        .bind(input.asOf)
-        .all<{ id: string; left_on: string; status: string }>(),
-      this.db
-        .prepare(
-          "SELECT id,event_type,occurred_at,outcome,target_type FROM audit_events WHERE datetime(occurred_at)<=datetime(?,'-3 years') ORDER BY occurred_at,id LIMIT 50",
-        )
-        .bind(input.asOf)
-        .all<{
-          id: string;
-          event_type: string;
-          occurred_at: string;
-          outcome: string;
-          target_type: string;
-        }>(),
-    ]);
+    const [members, auditEvents, aiSuggestions, shareTokens, backups] =
+      await Promise.all([
+        this.db
+          .prepare(
+            "SELECT id,left_on,status FROM members WHERE status IN ('LEFT','OUT_OF_SCOPE') AND left_on IS NOT NULL AND date(left_on)<=date(?,'-1 year') ORDER BY left_on,id LIMIT 50",
+          )
+          .bind(input.asOf)
+          .all<{ id: string; left_on: string; status: string }>(),
+        this.db
+          .prepare(
+            "SELECT id,event_type,occurred_at,outcome,target_type FROM audit_events WHERE datetime(occurred_at)<=datetime(?,'-3 years') ORDER BY occurred_at,id LIMIT 50",
+          )
+          .bind(input.asOf)
+          .all<{
+            id: string;
+            event_type: string;
+            occurred_at: string;
+            outcome: string;
+            target_type: string;
+          }>(),
+        this.db
+          .prepare(
+            `SELECT s.id,s.suggestion_type,s.status,s.created_at,
+            CASE
+              WHEN goal_due_at IS NOT NULL AND datetime(goal_due_at)<datetime(s.created_at,'+1 year') THEN goal_due_at
+              ELSE datetime(s.created_at,'+1 year')
+            END due_at
+           FROM ai_suggestions s JOIN ai_requests r ON r.id=s.request_id
+           LEFT JOIN (
+             SELECT ar.id request_id,MIN(datetime(gv.target_date,'+6 months')) goal_due_at
+             FROM ai_requests ar,json_each(ar.input_refs_json) ref
+             JOIN goal_versions gv ON gv.id=json_extract(ref.value,'$.id')
+             WHERE json_extract(ref.value,'$.type')='GOAL_VERSION' AND gv.target_date IS NOT NULL
+             GROUP BY ar.id
+           ) goal_due ON goal_due.request_id=r.id
+           WHERE s.status IN ('PENDING','REJECTED','SUPERSEDED')
+             AND NOT EXISTS(SELECT 1 FROM ai_adopted_drafts d WHERE d.suggestion_id=s.id)
+             AND datetime(CASE
+               WHEN goal_due_at IS NOT NULL AND datetime(goal_due_at)<datetime(s.created_at,'+1 year') THEN goal_due_at
+               ELSE datetime(s.created_at,'+1 year')
+             END)<=datetime(?)
+           ORDER BY due_at,s.id LIMIT 50`,
+          )
+          .bind(input.asOf)
+          .all<{
+            id: string;
+            suggestion_type: string;
+            status: string;
+            created_at: string;
+            due_at: string;
+          }>(),
+        this.db
+          .prepare(
+            "SELECT id,snapshot_id,expires_at,revoked_at FROM share_tokens WHERE datetime(expires_at)<=datetime(?) ORDER BY expires_at,id LIMIT 50",
+          )
+          .bind(input.asOf)
+          .all<{
+            id: string;
+            snapshot_id: string;
+            expires_at: string;
+            revoked_at: string | null;
+          }>(),
+        this.db
+          .prepare(
+            "SELECT id,object_key,expires_at,manifest_checksum FROM backup_exports WHERE status='READY' AND datetime(expires_at)<=datetime(?) ORDER BY expires_at,id LIMIT 50",
+          )
+          .bind(input.asOf)
+          .all<{
+            id: string;
+            object_key: string;
+            expires_at: string;
+            manifest_checksum: string;
+          }>(),
+      ]);
     const now = new Date().toISOString();
     const statements: D1PreparedStatement[] = [];
     for (const member of members.results) {
@@ -837,7 +961,93 @@ export class AdminRepository {
           ),
       );
     }
-    const candidateCount = members.results.length + auditEvents.results.length;
+    for (const suggestion of aiSuggestions.results) {
+      const previewJson = JSON.stringify({
+        suggestionId: suggestion.id,
+        suggestionType: suggestion.suggestion_type,
+        decisionStatus: suggestion.status,
+        createdAt: suggestion.created_at,
+        dueAt: suggestion.due_at,
+        humanAdoption: false,
+        irreversible: true,
+      });
+      statements.push(
+        this.db
+          .prepare(
+            "INSERT OR IGNORE INTO retention_actions(id,subject_type,subject_id,action,due_at,status,basis,preview_json,preview_hash,candidate_by,version,created_at,updated_at) VALUES(?,'AI_SUGGESTION',?,'DELETE_EXPIRED',?,'CANDIDATE',?,?,?,?,1,?,?)",
+          )
+          .bind(
+            crypto.randomUUID(),
+            suggestion.id,
+            suggestion.due_at,
+            "不採用AI提案の保持期限満了（生成1年または目標終了6か月の早い方）",
+            previewJson,
+            await sha256(previewJson),
+            principal.actorId,
+            now,
+            now,
+          ),
+      );
+    }
+    for (const token of shareTokens.results) {
+      const previewJson = JSON.stringify({
+        shareTokenId: token.id,
+        snapshotId: token.snapshot_id,
+        expiresAt: token.expires_at,
+        alreadyRevoked: token.revoked_at !== null,
+        rawTokenIncluded: false,
+        irreversible: true,
+      });
+      statements.push(
+        this.db
+          .prepare(
+            "INSERT OR IGNORE INTO retention_actions(id,subject_type,subject_id,action,due_at,status,basis,preview_json,preview_hash,candidate_by,version,created_at,updated_at) VALUES(?,'SHARE_TOKEN',?,'DELETE_EXPIRED',?,'CANDIDATE',?,?,?,?,1,?,?)",
+          )
+          .bind(
+            crypto.randomUUID(),
+            token.id,
+            token.expires_at,
+            "share tokenの有効期限満了",
+            previewJson,
+            await sha256(previewJson),
+            principal.actorId,
+            now,
+            now,
+          ),
+      );
+    }
+    for (const backup of backups.results) {
+      const previewJson = JSON.stringify({
+        backupExportId: backup.id,
+        objectKey: backup.object_key,
+        expiresAt: backup.expires_at,
+        checksumPresent: Boolean(backup.manifest_checksum),
+        irreversible: true,
+      });
+      statements.push(
+        this.db
+          .prepare(
+            "INSERT OR IGNORE INTO retention_actions(id,subject_type,subject_id,action,due_at,status,basis,preview_json,preview_hash,candidate_by,version,created_at,updated_at) VALUES(?,'BACKUP',?,'DELETE_EXPIRED',?,'CANDIDATE',?,?,?,?,1,?,?)",
+          )
+          .bind(
+            crypto.randomUUID(),
+            backup.id,
+            backup.expires_at,
+            "backupの30日保持期限満了",
+            previewJson,
+            await sha256(previewJson),
+            principal.actorId,
+            now,
+            now,
+          ),
+      );
+    }
+    const candidateCount =
+      members.results.length +
+      auditEvents.results.length +
+      aiSuggestions.results.length +
+      shareTokens.results.length +
+      backups.results.length;
     statements.push(
       this.db
         .prepare(
@@ -976,7 +1186,13 @@ export class AdminRepository {
         "retention_action_not_found",
       );
     if (
-      !["MEMBER", "AUDIT_EVENT"].includes(action.subject_type) ||
+      ![
+        "MEMBER",
+        "AI_SUGGESTION",
+        "AUDIT_EVENT",
+        "SHARE_TOKEN",
+        "BACKUP",
+      ].includes(action.subject_type) ||
       action.status !== "APPROVED" ||
       action.version !== input.version ||
       action.preview_hash !== input.previewHash
@@ -1067,6 +1283,174 @@ export class AdminRepository {
         );
       return this.listRetention();
     }
+    if (
+      action.subject_type === "AI_SUGGESTION" ||
+      action.subject_type === "SHARE_TOKEN"
+    ) {
+      const table =
+        action.subject_type === "AI_SUGGESTION"
+          ? "ai_suggestions"
+          : "share_tokens";
+      const guard =
+        action.subject_type === "AI_SUGGESTION"
+          ? " AND status IN ('PENDING','REJECTED','SUPERSEDED') AND NOT EXISTS(SELECT 1 FROM ai_adopted_drafts d WHERE d.suggestion_id=ai_suggestions.id)"
+          : " AND datetime(expires_at)<=datetime('now')";
+      const finish = new Date().toISOString();
+      try {
+        const result = await this.db.batch([
+          this.db
+            .prepare(`DELETE FROM ${table} WHERE id=?${guard}`)
+            .bind(action.subject_id),
+          this.db
+            .prepare(
+              "UPDATE retention_actions SET status='EXECUTED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING' AND changes()=1",
+            )
+            .bind(JSON.stringify({ deleted: true }), finish, actionId),
+          this.audit(
+            "RETENTION_EXECUTED",
+            principal,
+            "retention_action",
+            actionId,
+            requestId,
+            finish,
+            { dataClass: action.subject_type },
+            "changes()=1",
+          ),
+        ]);
+        if ((result[0]?.meta.changes ?? 0) === 1) return this.listRetention();
+      } catch {
+        // The failure is recorded below without exposing row content.
+      }
+      const failedAt = new Date().toISOString();
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE retention_actions SET status='FAILED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING'",
+          )
+          .bind(
+            JSON.stringify({ code: "RETENTION_TARGET_CHANGED" }),
+            failedAt,
+            actionId,
+          ),
+        this.audit(
+          "RETENTION_EXECUTION_FAILED",
+          principal,
+          "retention_action",
+          actionId,
+          requestId,
+          failedAt,
+          { errorCode: "RETENTION_TARGET_CHANGED" },
+          "changes()=1",
+        ),
+      ]);
+      throw new MemberError(
+        "VERSION_CONFLICT",
+        409,
+        "retention_target_changed",
+      );
+    }
+    if (action.subject_type === "BACKUP") {
+      const expiredBackup = await this.db
+        .prepare(
+          "SELECT object_key FROM backup_exports WHERE id=? AND status='READY' AND datetime(expires_at)<=datetime('now')",
+        )
+        .bind(action.subject_id)
+        .first<{ object_key: string }>();
+      if (!expiredBackup)
+        throw new MemberError(
+          "VERSION_CONFLICT",
+          409,
+          "retention_target_changed",
+        );
+      try {
+        await this.files.delete(expiredBackup.object_key);
+      } catch {
+        const failedAt = new Date().toISOString();
+        await this.db.batch([
+          this.db
+            .prepare(
+              "UPDATE retention_actions SET status='FAILED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING'",
+            )
+            .bind(
+              JSON.stringify({ code: "R2_DELETE_FAILED" }),
+              failedAt,
+              actionId,
+            ),
+          this.audit(
+            "RETENTION_EXECUTION_FAILED",
+            principal,
+            "retention_action",
+            actionId,
+            requestId,
+            failedAt,
+            { errorCode: "R2_DELETE_FAILED" },
+            "changes()=1",
+          ),
+        ]);
+        throw new MemberError(
+          "DEPENDENCY_UNAVAILABLE",
+          503,
+          "retention_r2_failed",
+        );
+      }
+      const finish = new Date().toISOString();
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE backup_exports SET status='EXPIRED' WHERE id=? AND status='READY'",
+          )
+          .bind(action.subject_id),
+        this.db
+          .prepare(
+            "UPDATE retention_actions SET status='EXECUTED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING' AND changes()=1",
+          )
+          .bind(JSON.stringify({ deletedObject: true }), finish, actionId),
+        this.audit(
+          "RETENTION_EXECUTED",
+          principal,
+          "retention_action",
+          actionId,
+          requestId,
+          finish,
+          { dataClass: "BACKUP" },
+          "changes()=1",
+        ),
+      ]);
+      return this.listRetention();
+    }
+    const memberExists = await this.db
+      .prepare("SELECT id FROM members WHERE id=?")
+      .bind(action.subject_id)
+      .first<{ id: string }>();
+    if (!memberExists) {
+      const failedAt = new Date().toISOString();
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE retention_actions SET status='FAILED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING'",
+          )
+          .bind(
+            JSON.stringify({ code: "RETENTION_TARGET_CHANGED" }),
+            failedAt,
+            actionId,
+          ),
+        this.audit(
+          "RETENTION_EXECUTION_FAILED",
+          principal,
+          "retention_action",
+          actionId,
+          requestId,
+          failedAt,
+          { errorCode: "RETENTION_TARGET_CHANGED" },
+          "changes()=1",
+        ),
+      ]);
+      throw new MemberError(
+        "VERSION_CONFLICT",
+        409,
+        "retention_target_changed",
+      );
+    }
     const objectKeys = await this.retentionObjectKeys(action.subject_id);
     try {
       for (const key of objectKeys) await this.files.delete(key);
@@ -1099,150 +1483,264 @@ export class AdminRepository {
         "retention_r2_failed",
       );
     }
-    const retiredRef = `retired:${crypto.randomUUID()}`;
     const memberId = action.subject_id;
-    const redacted = "[匿名化済み]";
     const finish = new Date().toISOString();
     await this.db.batch([
       this.db
         .prepare(
-          "UPDATE members SET employee_ref=?,display_name='匿名化済み',version=version+1,updated_at=? WHERE id=?",
+          `INSERT INTO anonymous_member_statistics(
+            bucket_month,anonymized_members,goal_count,progress_count,reflection_count,indicator_count,indicator_value_sum,updated_at
+          ) SELECT ?,1,
+            (SELECT COUNT(*) FROM goals WHERE member_id=?),
+            (SELECT COUNT(*) FROM progress_entries WHERE member_id=?),
+            (SELECT COUNT(*) FROM reflections WHERE member_id=?),
+            (SELECT COUNT(*) FROM goal_indicators WHERE member_id=?),
+            COALESCE((SELECT SUM(value) FROM goal_indicators WHERE member_id=?),0),?
+          WHERE EXISTS(SELECT 1 FROM members WHERE id=?)
+          ON CONFLICT(bucket_month) DO UPDATE SET
+            anonymized_members=anonymized_members+excluded.anonymized_members,
+            goal_count=goal_count+excluded.goal_count,
+            progress_count=progress_count+excluded.progress_count,
+            reflection_count=reflection_count+excluded.reflection_count,
+            indicator_count=indicator_count+excluded.indicator_count,
+            indicator_value_sum=indicator_value_sum+excluded.indicator_value_sum,
+            updated_at=excluded.updated_at`,
         )
-        .bind(retiredRef, finish, memberId),
+        .bind(
+          finish.slice(0, 7),
+          memberId,
+          memberId,
+          memberId,
+          memberId,
+          memberId,
+          finish,
+          memberId,
+        ),
       this.db
         .prepare(
-          "UPDATE self_analysis_entries SET response_text=CASE WHEN response_status='ANSWERED' THEN ? ELSE NULL END,version=version+1,updated_at=? WHERE session_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?)",
+          `UPDATE audit_events SET target_id='retired:'||lower(hex(randomblob(16))),metadata_json='{"retentionRedacted":true}'
+           WHERE
+             (target_type='member' AND target_id=?) OR
+             (target_type='goal' AND target_id IN (SELECT id FROM goals WHERE member_id=?)) OR
+             (target_type='goal_version' AND target_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)) OR
+             (target_type='progress_entry' AND target_id IN (SELECT id FROM progress_entries WHERE member_id=?)) OR
+             (target_type='reflection' AND target_id IN (SELECT id FROM reflections WHERE member_id=?)) OR
+             (target_type='one_on_one' AND target_id IN (SELECT id FROM one_on_ones WHERE member_id=?)) OR
+             (target_type='one_on_one_entry' AND target_id IN (SELECT e.id FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE o.member_id=?)) OR
+             (target_type='self_understanding' AND (
+               target_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?) OR
+               target_id IN (SELECT q.id FROM self_analysis_questions q JOIN self_analysis_sessions s ON s.id=q.session_id WHERE s.member_id=?) OR
+               target_id IN (SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=?) OR
+               target_id IN (SELECT id FROM future_vision_versions WHERE member_id=?)
+             )) OR
+             (target_type='ai_request' AND (target_id=? OR target_id IN (SELECT id FROM ai_requests WHERE member_id=?))) OR
+             (target_type='ai_suggestion' AND target_id IN (SELECT s.id FROM ai_suggestions s JOIN ai_requests r ON r.id=s.request_id WHERE r.member_id=?)) OR
+             (target_type='share_snapshot' AND target_id IN (SELECT id FROM share_snapshots WHERE member_id=?)) OR
+             (target_type='share_token' AND target_id IN (SELECT t.id FROM share_tokens t JOIN share_snapshots s ON s.id=t.snapshot_id WHERE s.member_id=?)) OR
+             (target_type='reminder_rule' AND target_id IN (SELECT id FROM reminder_rules WHERE member_id=?)) OR
+             (target_type='notification' AND target_id IN (SELECT id FROM notifications WHERE member_id=?)) OR
+             (target_type='review' AND target_id IN (
+               SELECT r.id FROM review_requests r WHERE
+                 (r.target_type='GOAL_VERSION' AND r.target_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)) OR
+                 (r.target_type='PROGRESS_ENTRY' AND r.target_id IN (SELECT id FROM progress_entries WHERE member_id=?)) OR
+                 (r.target_type='REFLECTION' AND r.target_id IN (SELECT id FROM reflections WHERE member_id=?)) OR
+                 (r.target_type='ONE_ON_ONE_ENTRY' AND r.target_id IN (SELECT e.id FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE o.member_id=?))
+             ))`,
         )
-        .bind(redacted, finish, memberId),
+        .bind(...Array(22).fill(memberId)),
       this.db
         .prepare(
-          "UPDATE self_analysis_entry_history SET response_text=CASE WHEN response_status='ANSWERED' THEN ? ELSE NULL END WHERE entry_id IN (SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=?)",
+          `UPDATE retention_actions SET status='CANCELLED',result_json='{"code":"MEMBER_ANONYMIZED"}',updated_at=?
+           WHERE status IN ('CANDIDATE','APPROVED') AND (
+             (subject_type='AI_SUGGESTION' AND subject_id IN (SELECT s.id FROM ai_suggestions s JOIN ai_requests r ON r.id=s.request_id WHERE r.member_id=?)) OR
+             (subject_type='SHARE_TOKEN' AND subject_id IN (SELECT t.id FROM share_tokens t JOIN share_snapshots s ON s.id=t.snapshot_id WHERE s.member_id=?))
+           )`,
         )
-        .bind(redacted, memberId),
+        .bind(finish, memberId, memberId),
       this.db
         .prepare(
-          "UPDATE self_analysis_questions SET prompt_text=?,version=version+1,updated_at=? WHERE session_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?)",
-        )
-        .bind(redacted, finish, memberId),
-      this.db
-        .prepare(
-          "UPDATE self_analysis_question_history SET prompt_text=? WHERE question_id IN (SELECT q.id FROM self_analysis_questions q JOIN self_analysis_sessions s ON s.id=q.session_id WHERE s.member_id=?)",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE future_vision_versions SET statement=? WHERE member_id=?",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE goal_versions SET title=?,description='',success_criteria=?,change_reason=NULL WHERE goal_id IN (SELECT id FROM goals WHERE member_id=?)",
-        )
-        .bind(redacted, redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE action_items SET title=?,expected_evidence=NULL WHERE member_id=?",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE evidence SET description=?,reference_uri=NULL WHERE member_id=?",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE goal_confirmations SET member_words=?,confirmation_checks_json='{}' WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE goal_links SET relevance_note='' WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
-        )
-        .bind(memberId),
-      this.db
-        .prepare(
-          "UPDATE goal_policy_links SET relevance_note='' WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
-        )
-        .bind(memberId),
-      this.db
-        .prepare(
-          "UPDATE smart_audits SET reasons_json='[]',exception_reason=NULL,alternative_review_method=NULL WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
-        )
-        .bind(memberId),
-      this.db
-        .prepare("UPDATE goal_indicators SET basis_note='' WHERE member_id=?")
-        .bind(memberId),
-      this.db
-        .prepare(
-          "UPDATE progress_entries SET note='',blocker='' WHERE member_id=?",
-        )
-        .bind(memberId),
-      this.db
-        .prepare(
-          "UPDATE reflections SET outcome='',learning='',feeling='' WHERE member_id=?",
-        )
-        .bind(memberId),
-      this.db
-        .prepare(
-          "UPDATE support_suggestions SET content=?,rationale=? WHERE member_id=?",
-        )
-        .bind(redacted, redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE one_on_ones SET theme='',version=version+1,updated_at=? WHERE member_id=?",
-        )
-        .bind(finish, memberId),
-      this.db
-        .prepare(
-          "UPDATE one_on_one_entries SET body=?,member_confirmation_words=CASE WHEN member_confirmation_words IS NULL THEN NULL ELSE ? END WHERE one_on_one_id IN (SELECT id FROM one_on_ones WHERE member_id=?)",
-        )
-        .bind(redacted, redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE ai_requests SET sanitized_context_cipher_ref='',input_refs_json='[]',redaction_report_json='{}',version=version+1,updated_at=? WHERE member_id=?",
-        )
-        .bind(finish, memberId),
-      this.db
-        .prepare(
-          "UPDATE ai_responses SET facts_used_json='[]',unknowns_json='[]',questions_json='[]',warnings_json='[]',confidence_note=? WHERE request_id IN (SELECT id FROM ai_requests WHERE member_id=?)",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE ai_suggestions SET payload_json='{}',rationale=?,source_refs_json='[]',decision_reason=CASE WHEN decision_reason IS NULL THEN NULL ELSE ? END,version=version+1 WHERE request_id IN (SELECT id FROM ai_requests WHERE member_id=?)",
-        )
-        .bind(redacted, redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE ai_adopted_drafts SET content=?,edit_diff_json='{}' WHERE member_id=?",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          "UPDATE share_snapshots SET revoked_at=?,mutation_nonce=?,version=version+1 WHERE member_id=? AND revoked_at IS NULL",
-        )
-        .bind(finish, crypto.randomUUID(), memberId),
-      this.db
-        .prepare(
-          "UPDATE share_tokens SET revoked_at=? WHERE snapshot_id IN (SELECT id FROM share_snapshots WHERE member_id=?) AND revoked_at IS NULL",
-        )
-        .bind(finish, memberId),
-      this.db
-        .prepare(
-          "UPDATE share_confirmations SET member_words=? WHERE snapshot_id IN (SELECT id FROM share_snapshots WHERE member_id=?)",
-        )
-        .bind(redacted, memberId),
-      this.db
-        .prepare(
-          `UPDATE review_comments SET body=? WHERE review_request_id IN (
+          `DELETE FROM review_comments WHERE review_request_id IN (
             SELECT r.id FROM review_requests r WHERE
-              (r.target_type='GOAL_VERSION' AND EXISTS(SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE v.id=r.target_id AND g.member_id=?)) OR
-              (r.target_type='PROGRESS_ENTRY' AND EXISTS(SELECT 1 FROM progress_entries p WHERE p.id=r.target_id AND p.member_id=?)) OR
-              (r.target_type='REFLECTION' AND EXISTS(SELECT 1 FROM reflections f WHERE f.id=r.target_id AND f.member_id=?)) OR
-              (r.target_type='ONE_ON_ONE_ENTRY' AND EXISTS(SELECT 1 FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE e.id=r.target_id AND o.member_id=?))
+              (r.target_type='GOAL_VERSION' AND r.target_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)) OR
+              (r.target_type='PROGRESS_ENTRY' AND r.target_id IN (SELECT id FROM progress_entries WHERE member_id=?)) OR
+              (r.target_type='REFLECTION' AND r.target_id IN (SELECT id FROM reflections WHERE member_id=?)) OR
+              (r.target_type='ONE_ON_ONE_ENTRY' AND r.target_id IN (SELECT e.id FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE o.member_id=?))
           )`,
         )
-        .bind(redacted, memberId, memberId, memberId, memberId),
+        .bind(memberId, memberId, memberId, memberId),
+      this.db
+        .prepare(
+          `DELETE FROM review_requests WHERE
+            (target_type='GOAL_VERSION' AND target_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)) OR
+            (target_type='PROGRESS_ENTRY' AND target_id IN (SELECT id FROM progress_entries WHERE member_id=?)) OR
+            (target_type='REFLECTION' AND target_id IN (SELECT id FROM reflections WHERE member_id=?)) OR
+            (target_type='ONE_ON_ONE_ENTRY' AND target_id IN (SELECT e.id FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE o.member_id=?))`,
+        )
+        .bind(memberId, memberId, memberId, memberId),
+      this.db
+        .prepare(
+          `DELETE FROM record_access_grants WHERE
+            (resource_type='GOAL_VERSION' AND resource_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)) OR
+            (resource_type='PROGRESS_ENTRY' AND resource_id IN (SELECT id FROM progress_entries WHERE member_id=?)) OR
+            (resource_type='REFLECTION' AND resource_id IN (SELECT id FROM reflections WHERE member_id=?)) OR
+            (resource_type='ONE_ON_ONE_ENTRY' AND resource_id IN (SELECT e.id FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE o.member_id=?)) OR
+            (resource_type='SELF_ANALYSIS_ENTRY' AND resource_id IN (SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=?)) OR
+            (resource_type='FUTURE_VISION_VERSION' AND resource_id IN (SELECT id FROM future_vision_versions WHERE member_id=?))`,
+        )
+        .bind(memberId, memberId, memberId, memberId, memberId, memberId),
+      this.db
+        .prepare(
+          "DELETE FROM jobs WHERE payload_ref IN (SELECT id FROM notifications WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM notification_items WHERE notification_id IN (SELECT id FROM notifications WHERE member_id=?) OR reminder_rule_id IN (SELECT id FROM reminder_rules WHERE member_id=?)",
+        )
+        .bind(memberId, memberId),
+      this.db
+        .prepare("DELETE FROM notifications WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM reminder_rules WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM share_confirmations WHERE snapshot_id IN (SELECT id FROM share_snapshots WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM share_tokens WHERE snapshot_id IN (SELECT id FROM share_snapshots WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM share_snapshots WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM ai_budget_ledger WHERE request_id IN (SELECT id FROM ai_requests WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM ai_adopted_drafts WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM ai_suggestions WHERE request_id IN (SELECT id FROM ai_requests WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM ai_responses WHERE request_id IN (SELECT id FROM ai_requests WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM ai_requests WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM future_vision_evidence_refs WHERE future_vision_version_id IN (SELECT id FROM future_vision_versions WHERE member_id=?) OR entry_id IN (SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=?)",
+        )
+        .bind(memberId, memberId),
+      this.db
+        .prepare(
+          "DELETE FROM self_analysis_entry_history WHERE entry_id IN (SELECT e.id FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE s.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM self_analysis_entries WHERE session_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM self_analysis_question_history WHERE question_id IN (SELECT q.id FROM self_analysis_questions q JOIN self_analysis_sessions s ON s.id=q.session_id WHERE s.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM self_analysis_questions WHERE session_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM self_analysis_session_history WHERE session_id IN (SELECT id FROM self_analysis_sessions WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM self_analysis_sessions WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM future_vision_versions WHERE member_id=?")
+        .bind(memberId),
+      this.db.prepare("DELETE FROM evidence WHERE member_id=?").bind(memberId),
+      this.db
+        .prepare("DELETE FROM progress_entries WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM reflections WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM goal_indicators WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM support_suggestions WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM one_on_one_entries WHERE one_on_one_id IN (SELECT id FROM one_on_ones WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM one_on_ones WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM goal_confirmations WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM goal_links WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM goal_policy_links WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM smart_audits WHERE goal_version_id IN (SELECT v.id FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE g.member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM goal_revision_guards WHERE goal_id IN (SELECT id FROM goals WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM action_items WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare(
+          "UPDATE goals SET current_version_id=NULL,parent_goal_id=NULL WHERE member_id=?",
+        )
+        .bind(memberId),
+      this.db
+        .prepare(
+          "DELETE FROM goal_versions WHERE goal_id IN (SELECT id FROM goals WHERE member_id=?)",
+        )
+        .bind(memberId),
+      this.db.prepare("DELETE FROM goals WHERE member_id=?").bind(memberId),
+      this.db
+        .prepare("DELETE FROM member_status_history WHERE member_id=?")
+        .bind(memberId),
+      this.db
+        .prepare("DELETE FROM member_unit_history WHERE member_id=?")
+        .bind(memberId),
+      this.db.prepare("DELETE FROM members WHERE id=?").bind(memberId),
       this.db
         .prepare(
           "UPDATE retention_actions SET status='EXECUTED',result_json=?,updated_at=? WHERE id=? AND status='EXECUTING'",
@@ -1251,7 +1749,7 @@ export class AdminRepository {
           JSON.stringify({
             anonymized: true,
             deletedR2Objects: objectKeys.length,
-            retained: "statistics",
+            retained: "non-linkable cohort statistics only",
           }),
           finish,
           actionId,
@@ -1273,11 +1771,11 @@ export class AdminRepository {
     sourceTimestamp: string,
   ): Promise<BackupManifest> {
     const counts: Record<string, number> = {};
+    const tables: Record<string, Row[]> = {};
     for (const table of BACKUP_TABLES) {
-      const row = await this.db
-        .prepare(`SELECT COUNT(*) count FROM ${table}`)
-        .first<{ count: number }>();
-      counts[table] = row?.count ?? 0;
+      const rows = await this.db.prepare(`SELECT * FROM ${table}`).all<Row>();
+      tables[table] = rows.results;
+      counts[table] = rows.results.length;
     }
     const keys = await this.db
       .prepare(
@@ -1285,10 +1783,11 @@ export class AdminRepository {
       )
       .all<{ object_key: string }>();
     return {
-      format: "CAREER_COMPASS_BACKUP_MANIFEST_V1",
+      format: "CAREER_COMPASS_RECOVERABLE_BACKUP_V2",
       schemaVersion: "0013",
       sourceTimestamp,
       counts,
+      tables,
       r2Keys: keys.results.map((row) => row.object_key).sort(),
     };
   }
@@ -1411,19 +1910,33 @@ export class AdminRepository {
         "backup_object_missing",
       );
     const content = await object.text();
+    const calculatedChecksum = await sha256(content);
     const checksumVerified =
-      (await sha256(content)) === backup.manifest_checksum;
+      calculatedChecksum === backup.manifest_checksum &&
+      input.restoredArtifactChecksum === backup.manifest_checksum;
     let manifest: BackupManifest;
     try {
       manifest = JSON.parse(content) as typeof manifest;
     } catch {
       throw new MemberError("VALIDATION_ERROR", 422, "backup_manifest_invalid");
     }
-    const current = await this.backupManifest(backup.source_timestamp);
     const schemaVerified =
-      checksumVerified && manifest.schemaVersion === "0013";
+      checksumVerified &&
+      manifest.format === "CAREER_COMPASS_RECOVERABLE_BACKUP_V2" &&
+      manifest.schemaVersion === "0013";
     const countsVerified =
-      JSON.stringify(manifest.counts) === JSON.stringify(current.counts);
+      schemaVerified &&
+      Object.entries(manifest.counts).every(
+        ([table, count]) =>
+          manifest.tables?.[table]?.length === count &&
+          input.restoredCounts[table] === count,
+      ) &&
+      BACKUP_TABLES.every(
+        (table) =>
+          Array.isArray(manifest.tables?.[table]) &&
+          Object.hasOwn(input.restoredCounts, table),
+      ) &&
+      Object.keys(input.restoredCounts).length === BACKUP_TABLES.length;
     let r2RefsVerified = true;
     for (const key of manifest.r2Keys) {
       if (!(await this.files.get(key))) {

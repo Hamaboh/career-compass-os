@@ -25,12 +25,13 @@
 
 ## retention
 
-1. 日次scanで退職・管理対象外から1年経過したMemberと、3年を超えたaudit eventを`CANDIDATE`化する。
-2. previewの基準日、件数、関連R2、残す匿名統計、取消不能性、hashを確認する。
+1. 日次scanで退職・管理対象外から1年経過したMember、3年を超えたaudit event、期限切れshare token、30日を超えたbackup、不採用AI提案（生成1年または参照目標終了6か月の早い方）をdata class別に`CANDIDATE`化する。
+2. previewの基準日、件数、関連R2、残す匿名統計、取消不能性、hashを確認する。Member匿名化は表示名の置換ではなく、個人に結び付くrow、履歴、ACL、review、R2参照を削除し、member/Unit/source IDを持たない月次cohort集計だけを残す。
 3. 一人目のSYSTEM_ADMINが同じhash/versionを承認する。
 4. 24時間以内の`READY` backupを確認する。
 5. 別のSYSTEM_ADMINが同じhash/versionで実行する。二重実行、古いversion、異なるhashは拒否する。
-6. 失敗時は状態と一般化error codeを確認する。R2削除後のDB失敗は同じactionを再開せず、backupとincident手順で復旧判断する。
+6. AI提案は人間が採用したdraftを対象外とし、retentionから人間確定dataへ昇格させない。share tokenはraw tokenをpreview・監査へ含めない。
+7. 失敗時は状態と一般化error codeを確認する。R2削除後のDB失敗は同じactionを再開せず、backupとincident手順で復旧判断する。
 
 ## quota・observability
 

@@ -104,6 +104,19 @@ CREATE TABLE operational_job_runs (
   completed_at TEXT NOT NULL
 );
 
+-- Retention preserves only non-linkable, cohort-level statistics.  No member,
+-- Unit, employee, goal, action, or source-record identifier is retained here.
+CREATE TABLE anonymous_member_statistics (
+  bucket_month TEXT PRIMARY KEY CHECK(bucket_month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  anonymized_members INTEGER NOT NULL DEFAULT 0 CHECK(anonymized_members>=0),
+  goal_count INTEGER NOT NULL DEFAULT 0 CHECK(goal_count>=0),
+  progress_count INTEGER NOT NULL DEFAULT 0 CHECK(progress_count>=0),
+  reflection_count INTEGER NOT NULL DEFAULT 0 CHECK(reflection_count>=0),
+  indicator_count INTEGER NOT NULL DEFAULT 0 CHECK(indicator_count>=0),
+  indicator_value_sum INTEGER NOT NULL DEFAULT 0 CHECK(indicator_value_sum>=0),
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX idx_retention_actions_status_due ON retention_actions(status,due_at);
 CREATE INDEX idx_backup_exports_status_time ON backup_exports(status,created_at);
 CREATE INDEX idx_restore_exercises_time ON restore_exercises(created_at);
@@ -134,7 +147,40 @@ CREATE TRIGGER restore_exercise_immutable_delete BEFORE DELETE ON restore_exerci
   SELECT RAISE(ABORT,'restore exercise is immutable');
 END;
 
-CREATE TRIGGER audit_event_immutable_update BEFORE UPDATE ON audit_events BEGIN
+CREATE TRIGGER audit_event_immutable_update BEFORE UPDATE ON audit_events
+WHEN NOT EXISTS(
+  SELECT 1 FROM retention_actions a
+  WHERE a.subject_type='MEMBER' AND a.action='ANONYMIZE' AND a.status='EXECUTING'
+    AND (
+      (OLD.target_type='member' AND OLD.target_id=a.subject_id) OR
+      (OLD.target_type='goal' AND EXISTS(SELECT 1 FROM goals g WHERE g.id=OLD.target_id AND g.member_id=a.subject_id)) OR
+      (OLD.target_type='goal_version' AND EXISTS(SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE v.id=OLD.target_id AND g.member_id=a.subject_id)) OR
+      (OLD.target_type='progress_entry' AND EXISTS(SELECT 1 FROM progress_entries p WHERE p.id=OLD.target_id AND p.member_id=a.subject_id)) OR
+      (OLD.target_type='reflection' AND EXISTS(SELECT 1 FROM reflections r WHERE r.id=OLD.target_id AND r.member_id=a.subject_id)) OR
+      (OLD.target_type='one_on_one' AND EXISTS(SELECT 1 FROM one_on_ones o WHERE o.id=OLD.target_id AND o.member_id=a.subject_id)) OR
+      (OLD.target_type='one_on_one_entry' AND EXISTS(SELECT 1 FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE e.id=OLD.target_id AND o.member_id=a.subject_id)) OR
+      (OLD.target_type='self_understanding' AND (
+        EXISTS(SELECT 1 FROM self_analysis_sessions s WHERE s.id=OLD.target_id AND s.member_id=a.subject_id) OR
+        EXISTS(SELECT 1 FROM self_analysis_questions q JOIN self_analysis_sessions s ON s.id=q.session_id WHERE q.id=OLD.target_id AND s.member_id=a.subject_id) OR
+        EXISTS(SELECT 1 FROM self_analysis_entries e JOIN self_analysis_sessions s ON s.id=e.session_id WHERE e.id=OLD.target_id AND s.member_id=a.subject_id) OR
+        EXISTS(SELECT 1 FROM future_vision_versions v WHERE v.id=OLD.target_id AND v.member_id=a.subject_id)
+      )) OR
+      (OLD.target_type='ai_request' AND (OLD.target_id=a.subject_id OR EXISTS(SELECT 1 FROM ai_requests q WHERE q.id=OLD.target_id AND q.member_id=a.subject_id))) OR
+      (OLD.target_type='ai_suggestion' AND EXISTS(SELECT 1 FROM ai_suggestions s JOIN ai_requests q ON q.id=s.request_id WHERE s.id=OLD.target_id AND q.member_id=a.subject_id)) OR
+      (OLD.target_type='share_snapshot' AND EXISTS(SELECT 1 FROM share_snapshots s WHERE s.id=OLD.target_id AND s.member_id=a.subject_id)) OR
+      (OLD.target_type='share_token' AND EXISTS(SELECT 1 FROM share_tokens t JOIN share_snapshots s ON s.id=t.snapshot_id WHERE t.id=OLD.target_id AND s.member_id=a.subject_id)) OR
+      (OLD.target_type='reminder_rule' AND EXISTS(SELECT 1 FROM reminder_rules r WHERE r.id=OLD.target_id AND r.member_id=a.subject_id)) OR
+      (OLD.target_type='notification' AND EXISTS(SELECT 1 FROM notifications n WHERE n.id=OLD.target_id AND n.member_id=a.subject_id)) OR
+      (OLD.target_type='review' AND EXISTS(
+        SELECT 1 FROM review_requests r WHERE r.id=OLD.target_id AND (
+          (r.target_type='GOAL_VERSION' AND EXISTS(SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE v.id=r.target_id AND g.member_id=a.subject_id)) OR
+          (r.target_type='PROGRESS_ENTRY' AND EXISTS(SELECT 1 FROM progress_entries p WHERE p.id=r.target_id AND p.member_id=a.subject_id)) OR
+          (r.target_type='REFLECTION' AND EXISTS(SELECT 1 FROM reflections f WHERE f.id=r.target_id AND f.member_id=a.subject_id)) OR
+          (r.target_type='ONE_ON_ONE_ENTRY' AND EXISTS(SELECT 1 FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id WHERE e.id=r.target_id AND o.member_id=a.subject_id))
+        )
+      ))
+    )
+) BEGIN
   SELECT RAISE(ABORT,'audit event is append only');
 END;
 CREATE TRIGGER audit_event_immutable_delete BEFORE DELETE ON audit_events
@@ -166,8 +212,44 @@ WHEN NOT EXISTS(
   SELECT RAISE(ABORT,'historic policy link immutable');
 END;
 
+DROP TRIGGER goal_policy_link_immutable_delete;
+CREATE TRIGGER goal_policy_link_immutable_delete BEFORE DELETE ON goal_policy_links
+WHEN NOT EXISTS(
+  SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id
+  JOIN retention_actions a ON a.subject_id=g.member_id
+  WHERE v.id=OLD.goal_version_id AND a.subject_type='MEMBER'
+    AND a.action='ANONYMIZE' AND a.status='EXECUTING'
+) BEGIN
+  SELECT RAISE(ABORT,'historic policy link immutable');
+END;
+
 DROP TRIGGER review_comment_immutable_update;
 CREATE TRIGGER review_comment_immutable_update BEFORE UPDATE ON review_comments
+WHEN NOT EXISTS(
+  SELECT 1 FROM review_requests r JOIN retention_actions a
+    ON a.subject_type='MEMBER' AND a.action='ANONYMIZE' AND a.status='EXECUTING'
+  WHERE r.id=OLD.review_request_id AND (
+    (r.target_type='GOAL_VERSION' AND EXISTS(
+      SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id
+      WHERE v.id=r.target_id AND g.member_id=a.subject_id
+    )) OR
+    (r.target_type='PROGRESS_ENTRY' AND EXISTS(
+      SELECT 1 FROM progress_entries p WHERE p.id=r.target_id AND p.member_id=a.subject_id
+    )) OR
+    (r.target_type='REFLECTION' AND EXISTS(
+      SELECT 1 FROM reflections f WHERE f.id=r.target_id AND f.member_id=a.subject_id
+    )) OR
+    (r.target_type='ONE_ON_ONE_ENTRY' AND EXISTS(
+      SELECT 1 FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id
+      WHERE e.id=r.target_id AND o.member_id=a.subject_id
+    ))
+  )
+) BEGIN
+  SELECT RAISE(ABORT,'review comment immutable');
+END;
+
+DROP TRIGGER review_comment_immutable_delete;
+CREATE TRIGGER review_comment_immutable_delete BEFORE DELETE ON review_comments
 WHEN NOT EXISTS(
   SELECT 1 FROM review_requests r JOIN retention_actions a
     ON a.subject_type='MEMBER' AND a.action='ANONYMIZE' AND a.status='EXECUTING'

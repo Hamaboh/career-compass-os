@@ -44,6 +44,7 @@ type Backup = {
   id: string;
   environment: string;
   status: string;
+  manifest_checksum: string | null;
   source_timestamp: string;
   expires_at: string;
   created_at: string;
@@ -257,10 +258,22 @@ export default function AdminPage() {
     const form = new FormData(event.currentTarget);
     const toIso = (value: FormDataEntryValue | null) =>
       new Date(String(value)).toISOString();
+    let restoredCounts: Record<string, number>;
+    try {
+      restoredCounts = JSON.parse(String(form.get("restoredCounts"))) as Record<
+        string,
+        number
+      >;
+    } catch {
+      setMessage("復元先table件数はJSON objectで入力してください。");
+      return;
+    }
     void send(`/api/v1/admin/backups/${backup.id}/restore-exercises`, {
       environment: "PREVIEW",
       startedAt: toIso(form.get("startedAt")),
       completedAt: toIso(form.get("completedAt")),
+      restoredArtifactChecksum: form.get("restoredArtifactChecksum"),
+      restoredCounts,
       authorizationSmokeVerified: form.get("auth") === "on",
       notes: form.get("notes"),
     });
@@ -593,11 +606,11 @@ export default function AdminPage() {
       <section className="panel">
         <h2>Backup・restore演習</h2>
         <p>
-          Private R2のmanifestは30日保持し、RPO 24時間・RTO
+          Private R2の復旧可能artifactは30日保持し、RPO 24時間・RTO
           1営業日を検証します。本番restoreはこの画面から実行しません。
         </p>
         <button type="button" onClick={createBackup}>
-          Preview backup manifestを作成
+          Preview recoverable backupを作成
         </button>
         {overview?.backups.map((backup) => (
           <form
@@ -606,6 +619,7 @@ export default function AdminPage() {
           >
             <strong>{backup.status}</strong> — {backup.source_timestamp} / 期限{" "}
             {backup.expires_at}
+            <small> checksum: {backup.manifest_checksum ?? "未確定"}</small>
             <label>
               演習開始
               <input name="startedAt" type="datetime-local" required />
@@ -613,6 +627,24 @@ export default function AdminPage() {
             <label>
               演習完了
               <input name="completedAt" type="datetime-local" required />
+            </label>
+            <label>
+              復元artifact checksum
+              <input
+                name="restoredArtifactChecksum"
+                pattern="[a-f0-9]{64}"
+                maxLength={64}
+                defaultValue={backup.manifest_checksum ?? ""}
+                required
+              />
+            </label>
+            <label>
+              復元先table件数（JSON）
+              <textarea
+                name="restoredCounts"
+                placeholder='{"members": 2, "goals": 4}'
+                required
+              />
             </label>
             <label>
               <input name="auth" type="checkbox" required />{" "}

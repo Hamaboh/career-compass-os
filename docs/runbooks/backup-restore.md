@@ -8,9 +8,9 @@
 
 1. 対象環境、D1 database、Private R2 backup prefixを確認する。
 2. D1 Time Travelが30日を満たす場合はbookmarkを記録する。満たさない場合はD1 exportを取得する。
-3. schema version、主要table件数、R2参照key、source timestampをmanifest化する。
-4. exportとmanifestを通常application readから分離したPrivate R2 prefixへ保存する。
-5. checksumを照合して`READY`にし、30日後のexpiryを記録する。
+3. schema version、全application tableのrow export、table件数、R2参照key、source timestampを`CAREER_COMPASS_RECOVERABLE_BACKUP_V2` artifactへ格納する。件数だけのmanifestを復旧可能backupとして扱わない。
+4. recoverable artifactを通常application readから分離したPrivate R2 backup prefixへ保存する。productionではD1 Time Travel bookmarkまたはCloudflare D1 exportを正本とし、application artifactは検証・preview復旧用とする。
+5. 保存後artifactのchecksum、各table row数とmanifest件数を照合してから`READY`にし、30日後のexpiryを記録する。
 6. `BACKUP_EXPORT_READY`監査eventと失敗時の一般化error codeを確認する。
 
 ## Preview restore exercise
@@ -23,13 +23,13 @@
 python3 scripts/test-admin-operations.py
 ```
 
-この検査は全migrationを空のSQLiteへ適用し、合成dataを実fileへbackupし、別connectionでrestoreして主要件数とforeign keyを検証する。さらに経過時間がRTO 1営業日以内であることを確認する。外部Cloudflare resource、credential、production dataは使用しない。
+この検査は全migrationを空のSQLiteへ適用し、合成dataを実fileへbackupして復旧する経路と、`CAREER_COMPASS_RECOVERABLE_BACKUP_V2`を`python3 scripts/restore-backup-artifact.py <artifact.json> <new.sqlite>`で新規DBへ復元する経路の両方を実行する。復元先自身の全table件数とforeign keyを検証し、経過時間がRTO 1営業日以内であることを確認する。外部Cloudflare resource、credential、production dataは使用しない。出力先DBが既に存在する場合は上書きしない。
 
 1. previewをmaintenance modeにし、書込みを停止する。
 2. 復旧対象export、source timestamp、checksum、schema versionを確認する。
 3. 現在状態の保全exportを別prefixへ作成する。
 4. 新しいpreview D1へexportをimportする。既存DBを直接上書きしない。
-5. migration version、主要table件数、foreign key、R2参照を検証する。
+5. migration version、復元先DB自身のtable件数、foreign key、R2参照を検証する。稼働中source DBの現在件数とは比較しない。
 6. SYSTEM_ADMIN、EXECUTIVE、UL、他Unit、CONFIDENTIAL拒否の認可smokeを実行する。
 7. RPOとRTOを計測し、24時間・1営業日以内か記録する。
 8. smoke成功後だけbindingを切り替え、maintenance modeを解除する。
