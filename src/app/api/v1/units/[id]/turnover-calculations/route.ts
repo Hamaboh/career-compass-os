@@ -11,10 +11,10 @@ import { assertMutationRequest } from "../../../../../../lib/member/security";
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ unitId: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { unitId } = await params;
-  idSchema.parse(unitId);
+  const { id } = await params;
+  idSchema.parse(id);
   const runtime = await memberRuntime();
   return withMemberRuntime(
     request,
@@ -24,7 +24,7 @@ export async function POST(
       return success(
         await policyRead(runtime.db, principal).calculateTurnoverForUnit(
           principal,
-          unitId,
+          id,
           await strictJson(request, turnoverInput),
           requestId,
         ),
