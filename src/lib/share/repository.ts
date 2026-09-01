@@ -795,6 +795,8 @@ export class ShareRepository {
   }
 
   async publicHtml(token: string, requestId: string, clientId = "unknown") {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token))
+      throw new MemberError("RESOURCE_NOT_FOUND", 404, "share_not_found");
     const incident = await this.db
       .prepare(
         "SELECT maintenance_mode,share_incident_disabled FROM operational_settings WHERE id='global'",
@@ -807,8 +809,6 @@ export class ShareRepository {
         503,
         "share_incident_switch_enabled",
       );
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token))
-      throw new MemberError("RESOURCE_NOT_FOUND", 404, "share_not_found");
     const now = new Date().toISOString();
     await this.enforcePublicRateLimit(clientId, now);
     const hash = await digest(token);
