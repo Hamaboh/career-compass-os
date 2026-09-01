@@ -270,7 +270,7 @@ describe("Implementation 9 admin boundaries", () => {
           async all() {
             if (sql.startsWith("SELECT * FROM "))
               return { results: [{ synthetic: sql.slice(14) }] };
-            return { results: [{ object_key: "private/synthetic" }] };
+            return { results: [{ object_key: "fixture" }] };
           },
         };
       },
