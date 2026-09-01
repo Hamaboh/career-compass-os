@@ -39,7 +39,7 @@
     "eslint-config-next": "15.5.23",
     "prettier": "3.6.2",
     "typescript": "5.9.2",
-    "vitest": "3.2.6",
+    "vitest": "4.1.11",
     "wrangler": "4.125.0"
   },
   "pnpm": {
