@@ -787,6 +787,13 @@ export class ContinuousSupportRepository {
     now: string,
     requestId: string,
   ) {
+    const settings = await this.db
+      .prepare(
+        "SELECT maintenance_mode,mail_incident_disabled FROM operational_settings WHERE id='global'",
+      )
+      .bind()
+      .first<{ maintenance_mode: number; mail_incident_disabled: number }>();
+    if (settings?.maintenance_mode || settings?.mail_incident_disabled) return;
     const jobs = await this.db
       .prepare(
         `SELECT j.id,j.payload_ref FROM jobs j JOIN notifications n ON n.id=j.payload_ref

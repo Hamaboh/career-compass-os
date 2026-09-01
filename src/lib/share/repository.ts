@@ -795,6 +795,18 @@ export class ShareRepository {
   }
 
   async publicHtml(token: string, requestId: string, clientId = "unknown") {
+    const incident = await this.db
+      .prepare(
+        "SELECT maintenance_mode,share_incident_disabled FROM operational_settings WHERE id='global'",
+      )
+      .bind()
+      .first<{ maintenance_mode: number; share_incident_disabled: number }>();
+    if (incident?.maintenance_mode || incident?.share_incident_disabled)
+      throw new MemberError(
+        "DEPENDENCY_UNAVAILABLE",
+        503,
+        "share_incident_switch_enabled",
+      );
     if (!/^[A-Za-z0-9_-]{43}$/.test(token))
       throw new MemberError("RESOURCE_NOT_FOUND", 404, "share_not_found");
     const now = new Date().toISOString();
