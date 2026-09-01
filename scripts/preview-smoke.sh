@@ -3,7 +3,16 @@ set -euo pipefail
 
 pnpm exec wrangler dev --local --port 8787 > /tmp/career-compass-preview.log 2>&1 &
 server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+preview_cleanup() {
+  preview_status=$?
+  kill "$server_pid" 2>/dev/null || true
+  if [ "$preview_status" -ne 0 ]; then
+    echo "Preview server log:" >&2
+    cat /tmp/career-compass-preview.log >&2
+  fi
+  exit "$preview_status"
+}
+trap preview_cleanup EXIT
 
 for _ in $(seq 1 30); do
   if curl --fail --silent --show-error --dump-header /tmp/career-compass-health.headers \
