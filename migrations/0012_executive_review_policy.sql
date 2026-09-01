@@ -109,19 +109,25 @@ BEGIN
     WHEN NEW.target_type='GOAL_VERSION' AND NOT EXISTS (
       SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id
       WHERE v.id=NEW.target_id AND g.unit_id=NEW.unit_id
+        AND v.version_no=NEW.revision_no
         AND v.confidentiality='NORMAL' AND v.visibility='UL_AND_EXEC'
     ) THEN RAISE(ABORT,'review target not visible')
     WHEN NEW.target_type='PROGRESS_ENTRY' AND NOT EXISTS (
-      SELECT 1 FROM progress_entries p WHERE p.id=NEW.target_id
+      SELECT 1 FROM progress_entries p JOIN goal_versions v ON v.id=p.goal_version_id WHERE p.id=NEW.target_id
+        AND v.version_no=NEW.revision_no
         AND p.unit_id=NEW.unit_id AND p.confidentiality='NORMAL'
     ) THEN RAISE(ABORT,'review target not visible')
     WHEN NEW.target_type='REFLECTION' AND NOT EXISTS (
-      SELECT 1 FROM reflections r WHERE r.id=NEW.target_id
+      SELECT 1 FROM reflections r JOIN goal_versions v ON v.id=r.goal_version_id WHERE r.id=NEW.target_id
+        AND v.version_no=NEW.revision_no
         AND r.unit_id=NEW.unit_id AND r.confidentiality='NORMAL'
     ) THEN RAISE(ABORT,'review target not visible')
     WHEN NEW.target_type='ONE_ON_ONE_ENTRY' AND NOT EXISTS (
       SELECT 1 FROM one_on_one_entries e JOIN one_on_ones o ON o.id=e.one_on_one_id
+      LEFT JOIN goal_versions v ON v.id=e.goal_version_id
       WHERE e.id=NEW.target_id AND o.unit_id=NEW.unit_id AND e.confidentiality='NORMAL'
+        AND e.entry_type<>'RAW_NOTE'
+        AND COALESCE(v.version_no,o.version)=NEW.revision_no
     ) THEN RAISE(ABORT,'review target not visible')
   END;
 END;
@@ -146,6 +152,9 @@ CREATE TABLE holidays (
 );
 CREATE TRIGGER holiday_calendar_immutable_update BEFORE UPDATE ON holiday_calendars
 WHEN OLD.status<>'DRAFT' BEGIN SELECT RAISE(ABORT,'published calendar immutable'); END;
+CREATE TRIGGER holiday_requires_draft_calendar BEFORE INSERT ON holidays
+WHEN NOT EXISTS (SELECT 1 FROM holiday_calendars c WHERE c.id=NEW.calendar_id AND c.status='DRAFT')
+BEGIN SELECT RAISE(ABORT,'holidays require draft calendar'); END;
 CREATE TRIGGER holiday_immutable_update BEFORE UPDATE ON holidays
 BEGIN SELECT RAISE(ABORT,'holiday immutable'); END;
 CREATE TRIGGER holiday_immutable_delete BEFORE DELETE ON holidays

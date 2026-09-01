@@ -4,7 +4,11 @@ import { ExecutiveRepository } from "./repository";
 
 export function executiveRead(db: D1Database, principal: Principal) {
   if (!principal.capabilities.includes("REVIEW_ALL"))
-    throw new AuthError("CAPABILITY_FORBIDDEN", 403, "review_capability_required");
+    throw new AuthError(
+      "CAPABILITY_FORBIDDEN",
+      403,
+      "review_capability_required",
+    );
   return new ExecutiveRepository(db);
 }
 
@@ -31,7 +35,11 @@ export function scopedReviewWrite(
 ) {
   if (principal.capabilities.includes("REVIEW_ALL")) {
     if (disposition === "UL_RESPONSE")
-      throw new AuthError("CAPABILITY_FORBIDDEN", 403, "reviewer_cannot_impersonate_ul");
+      throw new AuthError(
+        "CAPABILITY_FORBIDDEN",
+        403,
+        "reviewer_cannot_impersonate_ul",
+      );
     return new ExecutiveRepository(db);
   }
   const inScope =
@@ -40,6 +48,10 @@ export function scopedReviewWrite(
   if (!inScope)
     throw new AuthError("RESOURCE_NOT_FOUND", 404, "review_not_visible");
   if (disposition && disposition !== "UL_RESPONSE")
-    throw new AuthError("CAPABILITY_FORBIDDEN", 403, "review_action_not_allowed");
+    throw new AuthError(
+      "CAPABILITY_FORBIDDEN",
+      403,
+      "review_action_not_allowed",
+    );
   return new ExecutiveRepository(db);
 }

@@ -1,5 +1,5 @@
 import { policyRead, policyWrite } from "../../../../lib/executive/http";
-import { policyDocumentInput } from "../../../../lib/executive/schemas";
+import { holidayCalendarInput } from "../../../../lib/executive/schemas";
 import {
   strictJson,
   success,
@@ -23,9 +23,9 @@ export async function POST(request: Request) {
     async (_, principal, requestId) => {
       assertMutationRequest(request);
       return success(
-        await policyWrite(runtime.db, principal).createPolicyDocument(
+        await policyWrite(runtime.db, principal).createHolidayCalendar(
           principal,
-          await strictJson(request, policyDocumentInput),
+          await strictJson(request, holidayCalendarInput),
           requestId,
         ),
         requestId,

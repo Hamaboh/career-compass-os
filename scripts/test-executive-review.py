@@ -116,12 +116,52 @@ db.execute(
     (review, goal_version, unit, ul, executive),
 )
 db.execute(
+    "INSERT INTO one_on_ones VALUES('meeting-synthetic',?,?,?,'2026-01-02',NULL,'SCHEDULED','Synthetic',NULL,1,'2026-01-01','2026-01-01')",
+    (member, unit, ul),
+)
+db.execute(
+    "INSERT INTO one_on_one_entries VALUES('raw-note','meeting-synthetic',NULL,'RAW_NOTE','Internal synthetic note','UL_OBSERVATION','NORMAL','AI_SEND_ALLOWED',0,NULL,NULL,NULL,?,'2026-01-01')",
+    (ul,),
+)
+try:
+    db.execute(
+        "INSERT INTO review_requests VALUES('raw-note-review','ONE_ON_ONE_ENTRY','raw-note',?,?,NULL,'UNCONFIRMED',1,1,'2026-01-01','2026-01-01')",
+        (unit, executive),
+    )
+    raise AssertionError("UL internal raw note entered Executive review")
+except sqlite3.IntegrityError:
+    pass
+db.execute(
     "INSERT INTO review_comments VALUES('comment',?,?,?,'EXEC_AND_UL','RETURN','2026-01-01')",
     (review, executive, "Synthetic clarification"),
 )
 try:
     db.execute("UPDATE review_comments SET body='changed' WHERE id='comment'")
     raise AssertionError("review history changed")
+except sqlite3.IntegrityError:
+    pass
+
+calendar = "calendar-synthetic"
+db.execute(
+    "INSERT INTO holiday_calendars VALUES(?,2027,'synthetic-v1','DRAFT',?,?, '2026-01-01')",
+    (calendar, "c" * 64, admin),
+)
+db.execute(
+    "INSERT INTO holidays VALUES('holiday-synthetic',?,'2027-01-01','Synthetic holiday')",
+    (calendar,),
+)
+db.execute("UPDATE holiday_calendars SET status='ACTIVE' WHERE id=?", (calendar,))
+try:
+    db.execute(
+        "INSERT INTO holidays VALUES('late-holiday',?,'2027-01-02','Late mutation')",
+        (calendar,),
+    )
+    raise AssertionError("published holiday calendar was extended")
+except sqlite3.IntegrityError:
+    pass
+try:
+    db.execute("UPDATE holiday_calendars SET version_no='changed' WHERE id=?", (calendar,))
+    raise AssertionError("published holiday calendar was changed")
 except sqlite3.IntegrityError:
     pass
 
@@ -152,6 +192,7 @@ except sqlite3.IntegrityError:
     pass
 
 # A failed success audit rolls the business row back in the same transaction.
+db.commit()
 before = db.execute("SELECT COUNT(*) FROM policy_documents").fetchone()[0]
 db.execute(
     "CREATE TRIGGER reject_i8_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END"

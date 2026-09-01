@@ -25,6 +25,7 @@ type Review = {
   status: string;
   version: number;
   revision_no: number;
+  target_summary: string;
   comments: Array<{
     id: string;
     body: string;
@@ -55,6 +56,13 @@ type PolicyItem = {
   title: string;
   draft: number;
 };
+type HolidayCalendar = {
+  id: string;
+  year: number;
+  version_no: string;
+  status: string;
+  holiday_count: number;
+};
 
 export default function ExecutivePage() {
   const [units, setUnits] = useState<Unit[]>([]);
@@ -62,8 +70,12 @@ export default function ExecutivePage() {
   const [documents, setDocuments] = useState<Policy[]>([]);
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
   const [items, setItems] = useState<PolicyItem[]>([]);
+  const [calendars, setCalendars] = useState<HolidayCalendar[]>([]);
   const [message, setMessage] = useState("読み込み中です…");
-  const [calculation, setCalculation] = useState<Record<string, unknown> | null>(null);
+  const [calculation, setCalculation] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   async function load() {
     try {
@@ -84,6 +96,7 @@ export default function ExecutivePage() {
           documents: Policy[];
           versions: PolicyVersion[];
           items: PolicyItem[];
+          holidayCalendars: HolidayCalendar[];
         };
       };
       setUnits(overview.data.units);
@@ -91,6 +104,7 @@ export default function ExecutivePage() {
       setDocuments(policyData.data.documents);
       setVersions(policyData.data.versions);
       setItems(policyData.data.items);
+      setCalendars(policyData.data.holidayCalendars);
       setMessage("");
     } catch {
       setMessage("上位レビュー情報を表示できません。権限を確認してください。");
@@ -109,11 +123,15 @@ export default function ExecutivePage() {
       body: JSON.stringify(body),
     });
     if (response.status === 409) {
-      setMessage("別の利用者が先に更新しました。再読み込みして履歴を確認してください。");
+      setMessage(
+        "別の利用者が先に更新しました。再読み込みして履歴を確認してください。",
+      );
       return;
     }
     if (!response.ok) {
-      setMessage("保存できませんでした。権限、対象revision、状態を確認してください。");
+      setMessage(
+        "保存できませんでした。権限、対象revision、状態を確認してください。",
+      );
       return;
     }
     await load();
@@ -141,7 +159,10 @@ export default function ExecutivePage() {
     });
   }
 
-  function registerVersion(event: FormEvent<HTMLFormElement>, document: Policy) {
+  function registerVersion(
+    event: FormEvent<HTMLFormElement>,
+    document: Policy,
+  ) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     void send("/api/v1/policy-documents/" + document.id + "/versions", {
@@ -151,13 +172,15 @@ export default function ExecutivePage() {
       effectiveTo: form.get("effectiveTo") || null,
       status: form.get("status"),
       checksum: form.get("checksum"),
-      items: [{
-        category: form.get("category"),
-        code: form.get("code"),
-        title: form.get("title"),
-        description: form.get("description"),
-        criteria: {},
-      }],
+      items: [
+        {
+          category: form.get("category"),
+          code: form.get("code"),
+          title: form.get("title"),
+          description: form.get("description"),
+          criteria: {},
+        },
+      ],
     });
   }
 
@@ -172,21 +195,38 @@ export default function ExecutivePage() {
       setMessage("参考計算できませんでした。入力と権限を確認してください。");
       return;
     }
-    const envelope = (await response.json()) as { data: Record<string, unknown> };
+    const envelope = (await response.json()) as {
+      data: Record<string, unknown>;
+    };
     setCalculation(envelope.data);
     setMessage("参考計算しました。正式評価には使用しません。");
+  }
+
+  function registerCalendar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const holidays = String(form.get("holidays") ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [date, ...name] = line.split("|");
+        return { date, name: name.join("|").trim() };
+      });
+    void send("/api/v1/holiday-calendars", {
+      year: Number(form.get("year")),
+      versionNo: form.get("versionNo"),
+      status: form.get("status"),
+      checksum: form.get("checksum"),
+      holidays,
+    });
   }
 
   function businessDay(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const holidays = String(form.get("holidays") ?? "")
-      .split(/[\s,]+/)
-      .filter(Boolean);
     void calculate("/api/v1/calculations/business-day", {
       targetMonth: form.get("targetMonth"),
-      calendarVersion: form.get("calendarVersion"),
-      holidays,
     });
   }
 
@@ -220,9 +260,13 @@ export default function ExecutivePage() {
           人の順位付け、離職予測、意欲・心理状態の推定、人事評価・給与の確定には使用しません。
           機密本文と未承認AI仮説は表示しません。
         </p>
-        <p role="status" aria-live="polite">{message}</p>
+        <p role="status" aria-live="polite">
+          {message}
+        </p>
         {calculation && (
-          <pre aria-label="参考計算結果">{JSON.stringify(calculation, null, 2)}</pre>
+          <pre aria-label="参考計算結果">
+            {JSON.stringify(calculation, null, 2)}
+          </pre>
         )}
       </section>
 
@@ -230,18 +274,31 @@ export default function ExecutivePage() {
         <h2 id="units-heading">全Unit overview</h2>
         <table>
           <thead>
-            <tr><th>Unit</th><th>現在Member数</th><th>未完了レビュー</th><th>参考退職率を算出</th></tr>
+            <tr>
+              <th>Unit</th>
+              <th>現在Member数</th>
+              <th>未完了レビュー</th>
+              <th>参考退職率を算出</th>
+            </tr>
           </thead>
           <tbody>
             {units.map((unit) => (
               <tr key={unit.id}>
-                <td>{unit.code} / {unit.name}</td>
+                <td>
+                  {unit.code} / {unit.name}
+                </td>
                 <td>{unit.member_count}</td>
                 <td>{unit.open_reviews}</td>
                 <td>
                   <form onSubmit={(event) => turnover(event, unit.id)}>
-                    <label>期間開始<input name="periodStart" type="date" required /></label>
-                    <label>期間終了<input name="periodEnd" type="date" required /></label>
+                    <label>
+                      期間開始
+                      <input name="periodStart" type="date" required />
+                    </label>
+                    <label>
+                      期間終了
+                      <input name="periodEnd" type="date" required />
+                    </label>
                     <button>参考計算</button>
                   </form>
                 </td>
@@ -254,14 +311,19 @@ export default function ExecutivePage() {
 
       <section className="panel" aria-labelledby="reviews-heading">
         <h2 id="reviews-heading">レビュー受信箱</h2>
-        <p>元データを直接編集せず、コメント・修正依頼・対応確認だけを記録します。</p>
+        <p>
+          元データを直接編集せず、コメント・修正依頼・対応確認だけを記録します。
+        </p>
         {reviews.map((review) => (
           <article className="panel" key={review.id}>
-            <h3>{review.unit_code} / {review.target_type}</h3>
+            <h3>
+              {review.unit_code} / {review.target_type}
+            </h3>
             <p>
               <span className="status">{review.status}</span> 対象revision:
-              {review.revision_no} / 対象ID: {review.target_id}
+              {review.revision_no}
             </p>
+            <p>{review.target_summary || "本文なし"}</p>
             <ol>
               {review.comments.map((item) => (
                 <li key={item.id}>
@@ -270,7 +332,10 @@ export default function ExecutivePage() {
               ))}
             </ol>
             {review.status !== "CONFIRMED" && (
-              <form className="form" onSubmit={(event) => comment(event, review)}>
+              <form
+                className="form"
+                onSubmit={(event) => comment(event, review)}
+              >
                 <label>
                   action
                   <select name="disposition">
@@ -295,42 +360,84 @@ export default function ExecutivePage() {
       <section className="panel" aria-labelledby="policies-heading">
         <h2 id="policies-heading">制度資料管理</h2>
         <p>
-          個人評価制度とUnit Leaders Missionは分離します。新版登録は過去の目標linkを変更しません。
+          個人評価制度とUnit Leaders
+          Missionは分離します。新版登録は過去の目標linkを変更しません。
         </p>
         <table>
-          <thead><tr><th>種別</th><th>原本</th><th>version</th><th>過去link</th></tr></thead>
+          <thead>
+            <tr>
+              <th>種別</th>
+              <th>原本</th>
+              <th>version</th>
+              <th>過去link</th>
+            </tr>
+          </thead>
           <tbody>
             {documents.map((document) => (
               <tr key={document.id}>
-                <td>{document.type}</td><td>{document.source_name}</td>
-                <td>{document.version}</td><td>{document.historic_link_count}件</td>
+                <td>{document.type}</td>
+                <td>{document.source_name}</td>
+                <td>{document.version}</td>
+                <td>{document.historic_link_count}件</td>
               </tr>
             ))}
           </tbody>
         </table>
         {documents.map((document) => (
           <details key={"version-" + document.id}>
-            <summary>{document.source_name}へ不変versionを登録（SYSTEM_ADMIN）</summary>
-            <form className="form" onSubmit={(event) => registerVersion(event, document)}>
-              <label>版番号<input name="versionNo" required /></label>
-              <label>適用開始<input name="effectiveFrom" type="date" required /></label>
-              <label>適用終了<input name="effectiveTo" type="date" /></label>
-              <label>状態
+            <summary>
+              {document.source_name}へ不変versionを登録（SYSTEM_ADMIN）
+            </summary>
+            <form
+              className="form"
+              onSubmit={(event) => registerVersion(event, document)}
+            >
+              <label>
+                版番号
+                <input name="versionNo" required />
+              </label>
+              <label>
+                適用開始
+                <input name="effectiveFrom" type="date" required />
+              </label>
+              <label>
+                適用終了
+                <input name="effectiveTo" type="date" />
+              </label>
+              <label>
+                状態
                 <select name="status">
                   <option value="DRAFT">draft</option>
                   <option value="ACTIVE">active</option>
                   <option value="RETIRED">retired</option>
                 </select>
               </label>
-              <label>SHA-256 checksum<input name="checksum" pattern="[a-f0-9]{64}" required /></label>
+              <label>
+                SHA-256 checksum
+                <input name="checksum" pattern="[a-f0-9]{64}" required />
+              </label>
               <fieldset>
                 <legend>項目preview（1件）</legend>
-                <label>Category<input name="category" required /></label>
-                <label>Code<input name="code" required /></label>
-                <label>Title<input name="title" required /></label>
-                <label>Description<textarea name="description" /></label>
+                <label>
+                  Category
+                  <input name="category" required />
+                </label>
+                <label>
+                  Code
+                  <input name="code" required />
+                </label>
+                <label>
+                  Title
+                  <input name="title" required />
+                </label>
+                <label>
+                  Description
+                  <textarea name="description" />
+                </label>
               </fieldset>
-              <p>CategoryがManagementの場合、サーバーが必ずDRAFTとして保存します。</p>
+              <p>
+                CategoryがManagementの場合、サーバーが必ずDRAFTとして保存します。
+              </p>
               <button>versionと項目を登録</button>
             </form>
           </details>
@@ -338,30 +445,87 @@ export default function ExecutivePage() {
         <h3>版・項目preview</h3>
         {versions.map((version) => (
           <article key={version.id}>
-            <h4>{version.version_no} / {version.status} / {version.effective_from}</h4>
+            <h4>
+              {version.version_no} / {version.status} / {version.effective_from}
+            </h4>
             <p>この版への固定link: {version.historic_link_count}件</p>
             <ul>
-              {items.filter((item) => item.policy_version_id === version.id).map((item) => (
-                <li key={item.id}>
-                  {item.code}: {item.title}{" "}
-                  {item.draft === 1 && <strong className="status">DRAFT / Management</strong>}
-                </li>
-              ))}
+              {items
+                .filter((item) => item.policy_version_id === version.id)
+                .map((item) => (
+                  <li key={item.id}>
+                    {item.code}: {item.title}{" "}
+                    {item.draft === 1 && (
+                      <strong className="status">DRAFT / Management</strong>
+                    )}
+                  </li>
+                ))}
             </ul>
           </article>
         ))}
+        <h3>日本の祝日calendar</h3>
+        <ul>
+          {calendars.map((calendar) => (
+            <li key={calendar.id}>
+              {calendar.year} / {calendar.version_no} / {calendar.status} / 祝日
+              {calendar.holiday_count}件
+            </li>
+          ))}
+        </ul>
+        <details>
+          <summary>祝日calendarを登録（SYSTEM_ADMIN）</summary>
+          <form className="form" onSubmit={registerCalendar}>
+            <label>
+              対象年
+              <input name="year" type="number" min="2000" max="2200" required />
+            </label>
+            <label>
+              version
+              <input name="versionNo" required />
+            </label>
+            <label>
+              状態
+              <select name="status">
+                <option value="ACTIVE">active</option>
+                <option value="DRAFT">draft</option>
+                <option value="RETIRED">retired</option>
+              </select>
+            </label>
+            <label>
+              SHA-256 checksum
+              <input name="checksum" pattern="[a-f0-9]{64}" required />
+            </label>
+            <label>
+              祝日（1行ごとに YYYY-MM-DD|名称）
+              <textarea name="holidays" />
+            </label>
+            <button>calendarを登録</button>
+          </form>
+        </details>
         <details>
           <summary>制度原本を登録（SYSTEM_ADMIN）</summary>
           <form className="form" onSubmit={createDocument}>
-            <label>制度種別
+            <label>
+              制度種別
               <select name="type">
                 <option value="INDIVIDUAL_EVALUATION">個人評価制度</option>
-                <option value="UNIT_LEADERS_MISSION">Unit Leaders Mission</option>
+                <option value="UNIT_LEADERS_MISSION">
+                  Unit Leaders Mission
+                </option>
               </select>
             </label>
-            <label>原本名<input name="sourceName" required /></label>
-            <label>参照先<input name="sourceRef" /></label>
-            <label>管理責任者<input name="owner" required /></label>
+            <label>
+              原本名
+              <input name="sourceName" required />
+            </label>
+            <label>
+              参照先
+              <input name="sourceRef" />
+            </label>
+            <label>
+              管理責任者
+              <input name="owner" required />
+            </label>
             <button>原本メタデータを登録</button>
           </form>
         </details>
@@ -369,24 +533,35 @@ export default function ExecutivePage() {
 
       <section className="panel" aria-labelledby="rules-heading">
         <h2 id="rules-heading">決定論的な参考計算</h2>
-        <p>AIやメール・Slack監視は使用しません。24時間ruleはULが記録した事実だけを入力します。</p>
+        <p>
+          AIやメール・Slack監視は使用しません。24時間ruleはULが記録した事実だけを入力します。
+        </p>
         <details>
           <summary>交通費期限（翌月第2営業日）</summary>
           <form className="form" onSubmit={businessDay}>
-            <label>対象月<input name="targetMonth" type="month" required /></label>
-            <label>祝日calendar version<input name="calendarVersion" required /></label>
-            <label>日本の祝日（YYYY-MM-DD、空白またはカンマ区切り）
-              <textarea name="holidays" />
+            <label>
+              対象月
+              <input name="targetMonth" type="month" required />
             </label>
+            <p>対象年のactiveな日本祝日calendarをサーバー側で使用します。</p>
             <button>期限を参考計算</button>
           </form>
         </details>
         <details>
           <summary>24時間response rule</summary>
           <form className="form" onSubmit={responseWindow}>
-            <label>連絡日時<input name="contactAt" type="datetime-local" required /></label>
-            <label>応答日時（未応答なら空欄）<input name="responseAt" type="datetime-local" /></label>
-            <label>判定基準日時<input name="referenceAt" type="datetime-local" required /></label>
+            <label>
+              連絡日時
+              <input name="contactAt" type="datetime-local" required />
+            </label>
+            <label>
+              応答日時（未応答なら空欄）
+              <input name="responseAt" type="datetime-local" />
+            </label>
+            <label>
+              判定基準日時
+              <input name="referenceAt" type="datetime-local" required />
+            </label>
             <button>参考イベントを判定</button>
           </form>
         </details>

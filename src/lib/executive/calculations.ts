@@ -44,12 +44,6 @@ export function calculateTurnover(
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
-function parseDate(value: string) {
-  const date = new Date(value + "T00:00:00.000Z");
-  if (Number.isNaN(date.getTime()) || isoDate(date) !== value)
-    throw new Error("invalid_date");
-  return date;
-}
 export function secondBusinessDayOfFollowingMonth(
   targetMonth: string,
   holidays: ReadonlySet<string>,
@@ -96,10 +90,13 @@ export function classifyResponseWindow(
     )
   )
     throw new Error("invalid_datetime");
-  if (response && response < contact) throw new Error("response_before_contact");
+  if (response && response < contact)
+    throw new Error("response_before_contact");
   if (reference < contact) throw new Error("reference_before_contact");
   const threshold = new Date(contact.getTime() + 24 * 60 * 60 * 1000);
-  const referenceEvent = response ? response >= threshold : reference >= threshold;
+  const referenceEvent = response
+    ? response >= threshold
+    : reference >= threshold;
   return {
     contactAt: contact.toISOString(),
     responseAt: response?.toISOString() ?? null,
@@ -112,6 +109,7 @@ export function classifyResponseWindow(
         : "PENDING_BEFORE_THRESHOLD",
     referenceEvent,
     source: "UL_RECORDED_FACT",
-    disclaimer: "手入力された事実に基づく参考情報であり、正式評価ではありません",
+    disclaimer:
+      "手入力された事実に基づく参考情報であり、正式評価ではありません",
   };
 }

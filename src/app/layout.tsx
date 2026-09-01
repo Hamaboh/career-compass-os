@@ -17,7 +17,10 @@ export default function RootLayout({
           <Link href="/members" style={{ color: "white", marginLeft: "2rem" }}>
             Member
           </Link>{" "}
-          <Link href="/executive" style={{ color: "white", marginLeft: "2rem" }}>
+          <Link
+            href="/executive"
+            style={{ color: "white", marginLeft: "2rem" }}
+          >
             全Unitレビュー
           </Link>
         </header>

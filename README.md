@@ -4,7 +4,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜5を実装済みです。継続支援は進捗・振り返り・参考指標・1on1・可変周期リマインダー・D1 outbox・development fake通知まで利用できます。実AI、Gmail、production接続は未実装です。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜8を実装済みです。継続支援、deterministic AI safety pipeline、本人向けHTML共有、全Unitレビュー、制度version固定link、退職率・営業日・24時間ruleの参考計算まで利用できます。実AI、Gmail、production接続は未実装です。
 
 ## 開発・検証
 
