@@ -17,10 +17,10 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts tests/continuous-support.test.ts tests/ai-safety.test.ts tests/share.test.ts tests/executive-review.test.ts && python3 scripts/test-self-understanding.py && python3 scripts/test-migrations.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py",
+    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts tests/continuous-support.test.ts tests/ai-safety.test.ts tests/share.test.ts tests/executive-review.test.ts tests/admin-operations.test.ts && python3 scripts/test-self-understanding.py && python3 scripts/test-migrations.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py && python3 scripts/test-admin-operations.py",
     "test:migration": "rm -rf .wrangler/state && wrangler d1 migrations apply career-compass-local --local",
     "audit": "pnpm audit --audit-level=high",
-    "test:migration:all": "python3 scripts/test-migrations.py && python3 scripts/test-self-understanding.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py"
+    "test:migration:all": "python3 scripts/test-migrations.py && python3 scripts/test-self-understanding.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py && python3 scripts/test-admin-operations.py"
   },
   "dependencies": {
     "next": "15.5.23",

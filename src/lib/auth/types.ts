@@ -10,6 +10,11 @@ export const capabilities = [
   "REVIEW_ALL",
   "USER_ACCESS_MANAGE",
   "AUDIT_READ_ALL",
+  "AUDIT_READ_SCOPED",
+  "AI_CONFIG_MANAGE",
+  "RETENTION_MANAGE",
+  "BACKUP_MANAGE",
+  "OPERATIONS_READ",
 ] as const;
 export type Capability = (typeof capabilities)[number];
 export type AppUserStatus = "ACTIVE" | "SUSPENDED" | "REVOKED";

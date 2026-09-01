@@ -218,6 +218,18 @@ export class AiSafetyRepository {
     },
     requestId: string,
   ) {
+    const incident = await this.db
+      .prepare(
+        "SELECT maintenance_mode,ai_incident_disabled FROM operational_settings WHERE id='global'",
+      )
+      .bind()
+      .first<{ maintenance_mode: number; ai_incident_disabled: number }>();
+    if (incident?.maintenance_mode || incident?.ai_incident_disabled)
+      throw new MemberError(
+        "AI_UNAVAILABLE",
+        503,
+        "ai_incident_switch_enabled",
+      );
     const unit = await this.db
       .prepare(
         `SELECT h.unit_id,m.display_name,m.employee_ref,u.name AS unit_name,a.display_name AS actor_name,a.email_normalized AS actor_email
