@@ -99,6 +99,25 @@ export class AiSafetyRepository {
     }
   }
 
+  private async assertAiOperational() {
+    const incident = await this.db
+      .prepare(
+        "SELECT maintenance_mode,ai_incident_disabled FROM operational_settings WHERE id='global'",
+      )
+      .bind()
+      .first<{ maintenance_mode: number; ai_incident_disabled: number }>();
+    if (
+      !incident ||
+      incident.maintenance_mode !== 0 ||
+      incident.ai_incident_disabled !== 0
+    )
+      throw new MemberError(
+        "AI_UNAVAILABLE",
+        503,
+        "ai_incident_switch_enabled",
+      );
+  }
+
   private audit(
     eventType: string,
     principal: Principal,
@@ -218,6 +237,7 @@ export class AiSafetyRepository {
     },
     requestId: string,
   ) {
+    await this.assertAiOperational();
     const unit = await this.db
       .prepare(
         `SELECT h.unit_id,m.display_name,m.employee_ref,u.name AS unit_name,a.display_name AS actor_name,a.email_normalized AS actor_email
@@ -525,6 +545,7 @@ export class AiSafetyRepository {
     const row = await this.ownedRequest(principal, id);
     if (row.status !== "AWAITING_UL_APPROVAL" || row.version !== version)
       throw new MemberError("VERSION_CONFLICT", 409, "request_state_conflict");
+    await this.assertAiOperational();
     const object = await this.files.get(row.sanitized_context_cipher_ref);
     if (!object || new Date(row.context_expires_at) <= new Date()) {
       if (new Date(row.context_expires_at) <= new Date())
@@ -601,7 +622,8 @@ export class AiSafetyRepository {
       this.db
         .prepare(
           `UPDATE ai_requests SET status='APPROVED',approved_by=?,approved_at=?,approval_hash=?,version=version+1,updated_at=?
-        WHERE id=? AND actor_id=? AND version=? AND status='AWAITING_UL_APPROVAL'`,
+        WHERE id=? AND actor_id=? AND version=? AND status='AWAITING_UL_APPROVAL'
+          AND EXISTS(SELECT 1 FROM operational_settings WHERE id='global' AND maintenance_mode=0 AND ai_incident_disabled=0)`,
         )
         .bind(
           principal.actorId,
@@ -645,6 +667,9 @@ export class AiSafetyRepository {
 
     const refs = JSON.parse(row.input_refs_json) as InputRef[];
     try {
+      // Re-read immediately before provider invocation. The reservation query also
+      // checks these flags atomically so a switch flip cannot race budget reserve.
+      await this.assertAiOperational();
       const validated = validateFakeResponse(
         deterministicFakeResponse(row.operation, refs, text),
         refs,
@@ -706,7 +731,7 @@ export class AiSafetyRepository {
       ];
       await this.db.batch(statements);
       await this.bestEffortDelete(row.sanitized_context_cipher_ref);
-    } catch {
+    } catch (error) {
       const failedAt = new Date().toISOString();
       await this.db.batch([
         this.db
@@ -721,6 +746,8 @@ export class AiSafetyRepository {
           .bind(failedAt, id),
         this.audit("AI_RESPONSE_REJECTED", principal, id, requestId, failedAt),
       ]);
+      if (error instanceof MemberError && error.code === "AI_UNAVAILABLE")
+        throw error;
     }
     return this.get(principal, id);
   }

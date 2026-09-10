@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic R2 object-key fixture (not a credential)"
+paths = ['''^tests/admin-operations\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^private/synthetic$''']

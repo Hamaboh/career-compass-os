@@ -173,6 +173,8 @@ describe("AI human decision and server-side scope", () => {
             return this;
           },
           async first() {
+            if (query.includes("FROM operational_settings"))
+              return { maintenance_mode: 0, ai_incident_disabled: 0 };
             if (query.includes("FROM members m"))
               return {
                 unit_id: "unit-a",
@@ -226,5 +228,53 @@ describe("AI human decision and server-side scope", () => {
       issued.some((query) => query.includes("g.current_version_id=v.id")),
     ).toBe(true);
     expect(puts).toBe(0);
+  });
+
+  it("fails closed before reading context when an approved request is stopped", async () => {
+    let contextReads = 0;
+    const stoppedDb = {
+      prepare(query: string) {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            if (query.includes("FROM ai_requests WHERE id="))
+              return {
+                id: ref.id,
+                actor_id: "ul-a",
+                unit_id: "unit-a",
+                status: "AWAITING_UL_APPROVAL",
+                version: 1,
+              };
+            if (query.includes("FROM operational_settings"))
+              return { maintenance_mode: 0, ai_incident_disabled: 1 };
+            return null;
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const principal = {
+      actorId: "ul-a",
+      unitScopes: [
+        { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
+      ],
+      globalUnitRead: false,
+    } as unknown as Principal;
+    const stoppedFiles = {
+      get: async () => {
+        contextReads += 1;
+        return null;
+      },
+    } as unknown as R2Bucket;
+    await expect(
+      new AiSafetyRepository(stoppedDb, stoppedFiles).approveAndRun(
+        principal,
+        ref.id,
+        1,
+        "request-stopped",
+      ),
+    ).rejects.toMatchObject({ code: "AI_UNAVAILABLE", status: 503 });
+    expect(contextReads).toBe(0);
   });
 });

@@ -13,6 +13,30 @@ export interface MemberRuntime {
   verifier: AccessJwtVerifier;
   privateFiles?: Pick<R2Bucket, "get" | "put" | "delete">;
 }
+
+export async function assertOperationalWriteAvailable(
+  request: Request,
+  db: D1Database,
+) {
+  if (
+    ["GET", "HEAD", "OPTIONS"].includes(request.method) ||
+    new URL(request.url).pathname.startsWith("/api/v1/admin/")
+  )
+    return;
+  const operations = await db
+    .prepare(
+      "SELECT maintenance_mode FROM operational_settings WHERE id='global'",
+    )
+    .bind()
+    .first<{ maintenance_mode: number }>();
+  if (operations?.maintenance_mode)
+    throw new MemberError(
+      "DEPENDENCY_UNAVAILABLE",
+      503,
+      "maintenance_mode_enabled",
+    );
+}
+
 export async function withMemberRuntime(
   request: Request,
   runtime: MemberRuntime,
@@ -29,6 +53,7 @@ export async function withMemberRuntime(
       runtime.verifier,
       new D1AppUserRepository(runtime.db),
     );
+    await assertOperationalWriteAvailable(request, runtime.db);
     return await run(
       new MemberService(
         new D1MemberRepository(runtime.db),

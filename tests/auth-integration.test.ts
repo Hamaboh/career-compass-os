@@ -62,7 +62,12 @@ describe("GET /api/v1/me integration", () => {
         status: "ACTIVE",
         roles: ["UL"],
         unitScopes: active.unitScopes,
-        capabilities: ["PROFILE_READ", "UNIT_READ_SCOPED", "UNIT_EDIT_SCOPED"],
+        capabilities: [
+          "PROFILE_READ",
+          "UNIT_READ_SCOPED",
+          "UNIT_EDIT_SCOPED",
+          "AUDIT_READ_SCOPED",
+        ],
         profile: { displayName: "Synthetic User" },
       },
       meta: { requestId: "request_123", nextCursor: null },
