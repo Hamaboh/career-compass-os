@@ -178,7 +178,12 @@ describe("share repository authorization and public denial", () => {
 
   it("rate-limits public token attempts before any R2 access", async () => {
     const { db, first } = emptyDatabase();
-    first.mockResolvedValueOnce({ attempt_count: 61 });
+    first
+      .mockResolvedValueOnce({
+        maintenance_mode: 0,
+        share_incident_disabled: 0,
+      })
+      .mockResolvedValueOnce({ attempt_count: 61 });
     const get = vi.fn();
     const repository = new ShareRepository(db, {
       get,

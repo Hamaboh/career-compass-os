@@ -17,13 +17,13 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts tests/continuous-support.test.ts tests/ai-safety.test.ts tests/share.test.ts tests/executive-review.test.ts && python3 scripts/test-self-understanding.py && python3 scripts/test-migrations.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py",
+    "test:integration": "vitest run tests/auth-integration.test.ts tests/self-understanding.test.ts tests/continuous-support.test.ts tests/ai-safety.test.ts tests/share.test.ts tests/executive-review.test.ts tests/admin-operations.test.ts && python3 scripts/test-self-understanding.py && python3 scripts/test-migrations.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py && python3 scripts/test-admin-operations.py",
     "test:migration": "rm -rf .wrangler/state && wrangler d1 migrations apply career-compass-local --local",
     "audit": "pnpm audit --audit-level=high",
-    "test:migration:all": "python3 scripts/test-migrations.py && python3 scripts/test-self-understanding.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py"
+    "test:migration:all": "python3 scripts/test-migrations.py && python3 scripts/test-self-understanding.py && python3 scripts/test-ai-safety.py && python3 scripts/test-share.py && python3 scripts/test-executive-review.py && python3 scripts/test-admin-operations.py"
   },
   "dependencies": {
-    "next": "15.5.23",
+    "next": "15.5.24",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zod": "4.1.11"
@@ -36,7 +36,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "9.35.0",
-    "eslint-config-next": "15.5.23",
+    "eslint-config-next": "15.5.24",
     "prettier": "3.6.2",
     "typescript": "5.9.2",
     "vitest": "3.2.6",
@@ -45,7 +45,8 @@
   "pnpm": {
     "overrides": {
       "postcss": "8.5.23",
-      "sharp": "0.35.0"
+      "sharp": "0.35.4",
+      "js-yaml": "4.3.2"
     }
   }
 }

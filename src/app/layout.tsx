@@ -22,6 +22,9 @@ export default function RootLayout({
             style={{ color: "white", marginLeft: "2rem" }}
           >
             全Unitレビュー
+          </Link>{" "}
+          <Link href="/admin" style={{ color: "white", marginLeft: "2rem" }}>
+            管理・運用
           </Link>
         </header>
         {children}

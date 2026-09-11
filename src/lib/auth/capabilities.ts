@@ -9,14 +9,25 @@ const roleCapabilities: Record<Role, readonly Capability[]> = {
     "REVIEW_ALL",
     "USER_ACCESS_MANAGE",
     "AUDIT_READ_ALL",
+    "AUDIT_READ_SCOPED",
+    "AI_CONFIG_MANAGE",
+    "RETENTION_MANAGE",
+    "BACKUP_MANAGE",
+    "OPERATIONS_READ",
   ],
   EXECUTIVE: [
     "PROFILE_READ",
     "UNIT_READ_ALL",
     "UNIT_READ_SCOPED",
     "REVIEW_ALL",
+    "AUDIT_READ_SCOPED",
   ],
-  UL: ["PROFILE_READ", "UNIT_READ_SCOPED", "UNIT_EDIT_SCOPED"],
+  UL: [
+    "PROFILE_READ",
+    "UNIT_READ_SCOPED",
+    "UNIT_EDIT_SCOPED",
+    "AUDIT_READ_SCOPED",
+  ],
 };
 
 export function capabilitiesFor(roles: Role[]): Capability[] {
@@ -27,6 +38,7 @@ const globalUnitCapabilities = new Set<Capability>([
   "UNIT_READ_ALL",
   "REVIEW_ALL",
   "AUDIT_READ_ALL",
+  "AUDIT_READ_SCOPED",
 ]);
 
 export function capabilityAllowsGlobalUnitScope(

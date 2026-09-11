@@ -135,6 +135,9 @@ describe("AI human decision and server-side scope", () => {
           async first() {
             return null;
           },
+          async all() {
+            return { results: [] };
+          },
         };
       },
     };
@@ -173,6 +176,8 @@ describe("AI human decision and server-side scope", () => {
             return this;
           },
           async first() {
+            if (query.includes("FROM operational_settings"))
+              return { maintenance_mode: 0, ai_incident_disabled: 0 };
             if (query.includes("FROM members m"))
               return {
                 unit_id: "unit-a",
@@ -226,5 +231,136 @@ describe("AI human decision and server-side scope", () => {
       issued.some((query) => query.includes("g.current_version_id=v.id")),
     ).toBe(true);
     expect(puts).toBe(0);
+  });
+
+  it("fails closed before reading context when an approved request is stopped", async () => {
+    let contextReads = 0;
+    const stoppedDb = {
+      prepare(query: string) {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            if (query.includes("FROM ai_requests WHERE id="))
+              return {
+                id: ref.id,
+                actor_id: "ul-a",
+                unit_id: "unit-a",
+                status: "AWAITING_UL_APPROVAL",
+                version: 1,
+              };
+            if (query.includes("FROM operational_settings"))
+              return { maintenance_mode: 0, ai_incident_disabled: 1 };
+            return null;
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const principal = {
+      actorId: "ul-a",
+      unitScopes: [
+        { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
+      ],
+      globalUnitRead: false,
+    } as unknown as Principal;
+    const stoppedFiles = {
+      get: async () => {
+        contextReads += 1;
+        return null;
+      },
+    } as unknown as R2Bucket;
+    await expect(
+      new AiSafetyRepository(stoppedDb, stoppedFiles).approveAndRun(
+        principal,
+        ref.id,
+        1,
+        "request-stopped",
+      ),
+    ).rejects.toMatchObject({ code: "AI_UNAVAILABLE", status: 503 });
+    expect(contextReads).toBe(0);
+  });
+
+  it("releases the reservation and keeps approval retryable when stopped immediately before provider use", async () => {
+    const context = "sanitized context";
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(context),
+    );
+    const contextHash = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    let switchReads = 0;
+    const batches: string[][] = [];
+    const guardedDb = {
+      prepare(sql: string) {
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          async first() {
+            if (sql.includes("FROM ai_requests WHERE id="))
+              return {
+                id: ref.id,
+                actor_id: "ul-a",
+                unit_id: "unit-a",
+                member_id: "member-a",
+                status: "AWAITING_UL_APPROVAL",
+                version: 1,
+                sanitized_context_cipher_ref: "private/context-a",
+                context_expires_at: "2099-01-01T00:00:00.000Z",
+                context_hash: contextHash,
+                model_policy_id: "policy-a",
+                purpose: "synthetic",
+                operation: "QUESTION_PLAN",
+                estimated_microunits: 1,
+                input_refs_json: JSON.stringify([ref]),
+              };
+            if (sql.includes("FROM operational_settings")) {
+              switchReads += 1;
+              return switchReads < 2
+                ? { maintenance_mode: 0, ai_incident_disabled: 0 }
+                : { maintenance_mode: 1, ai_incident_disabled: 0 };
+            }
+            if (sql.includes("FROM model_policies"))
+              return { monthly_cap_microunits: 100 };
+            if (sql.includes("FROM ai_budget_ledger")) return { used: 0 };
+            return null;
+          },
+          async all() {
+            return { results: [] };
+          },
+        };
+      },
+      async batch(statements: Array<{ sql: string }>) {
+        batches.push(statements.map(({ sql }) => sql));
+        return statements.map(() => ({ meta: { changes: 1 }, results: [] }));
+      },
+    } as unknown as D1Database;
+    const principal = {
+      actorId: "ul-a",
+      unitScopes: [
+        { unitId: "unit-a", validFrom: "2026-01-01", validTo: null },
+      ],
+      globalUnitRead: false,
+    } as unknown as Principal;
+    const guardedFiles = {
+      get: async () => ({ text: async () => context }),
+    } as unknown as R2Bucket;
+    await expect(
+      new AiSafetyRepository(guardedDb, guardedFiles).approveAndRun(
+        principal,
+        ref.id,
+        1,
+        "request-provider-stop",
+      ),
+    ).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
+    const deferred = batches.at(-1)?.join("\n") ?? "";
+    expect(deferred).toContain("SET error_code='AI_UNAVAILABLE'");
+    expect(deferred).toContain("SET status='RELEASED'");
+    expect(batches.at(-1)).toHaveLength(3);
+    expect(deferred).not.toContain("status='FAILED'");
+    expect(deferred).not.toContain("AI_OUTPUT_INVALID");
   });
 });

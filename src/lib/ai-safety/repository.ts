@@ -99,6 +99,25 @@ export class AiSafetyRepository {
     }
   }
 
+  private async assertAiOperational() {
+    const incident = await this.db
+      .prepare(
+        "SELECT maintenance_mode,ai_incident_disabled FROM operational_settings WHERE id='global'",
+      )
+      .bind()
+      .first<{ maintenance_mode: number; ai_incident_disabled: number }>();
+    if (
+      !incident ||
+      incident.maintenance_mode !== 0 ||
+      incident.ai_incident_disabled !== 0
+    )
+      throw new MemberError(
+        "AI_UNAVAILABLE",
+        503,
+        "ai_incident_switch_enabled",
+      );
+  }
+
   private audit(
     eventType: string,
     principal: Principal,
@@ -218,6 +237,7 @@ export class AiSafetyRepository {
     },
     requestId: string,
   ) {
+    await this.assertAiOperational();
     const unit = await this.db
       .prepare(
         `SELECT h.unit_id,m.display_name,m.employee_ref,u.name AS unit_name,a.display_name AS actor_name,a.email_normalized AS actor_email
@@ -523,8 +543,13 @@ export class AiSafetyRepository {
     requestId: string,
   ) {
     const row = await this.ownedRequest(principal, id);
-    if (row.status !== "AWAITING_UL_APPROVAL" || row.version !== version)
+    const retryingApproved = row.status === "APPROVED";
+    if (
+      !["AWAITING_UL_APPROVAL", "APPROVED"].includes(row.status) ||
+      row.version !== version
+    )
       throw new MemberError("VERSION_CONFLICT", 409, "request_state_conflict");
+    await this.assertAiOperational();
     const object = await this.files.get(row.sanitized_context_cipher_ref);
     if (!object || new Date(row.context_expires_at) <= new Date()) {
       if (new Date(row.context_expires_at) <= new Date())
@@ -597,54 +622,79 @@ export class AiSafetyRepository {
         );
       return this.get(principal, id);
     }
+    const requestReservation = retryingApproved
+      ? this.db
+          .prepare(
+            `UPDATE ai_requests SET error_code=NULL,version=version+1,updated_at=?
+             WHERE id=? AND actor_id=? AND version=? AND status='APPROVED'
+               AND EXISTS(SELECT 1 FROM operational_settings WHERE id='global' AND maintenance_mode=0 AND ai_incident_disabled=0)`,
+          )
+          .bind(now, id, principal.actorId, version)
+      : this.db
+          .prepare(
+            `UPDATE ai_requests SET status='APPROVED',approved_by=?,approved_at=?,approval_hash=?,version=version+1,updated_at=?
+             WHERE id=? AND actor_id=? AND version=? AND status='AWAITING_UL_APPROVAL'
+               AND EXISTS(SELECT 1 FROM operational_settings WHERE id='global' AND maintenance_mode=0 AND ai_incident_disabled=0)`,
+          )
+          .bind(
+            principal.actorId,
+            now,
+            approvalHash,
+            now,
+            id,
+            principal.actorId,
+            version,
+          );
+    const ledgerReservation = retryingApproved
+      ? this.db
+          .prepare(
+            "UPDATE ai_budget_ledger SET status='RESERVED',estimated_microunits=?,actual_microunits=NULL,updated_at=? WHERE request_id=? AND status='RELEASED'",
+          )
+          .bind(row.estimated_microunits, now, id)
+      : this.db
+          .prepare(
+            `INSERT INTO ai_budget_ledger(id,month,request_id,unit_id,actor_id,operation,estimated_microunits,status,created_at,updated_at)
+             SELECT ?,?,?,?,?,?,?,'RESERVED',?,? FROM ai_requests WHERE id=? AND status='APPROVED' AND approved_at=?`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            month,
+            id,
+            row.unit_id,
+            principal.actorId,
+            row.operation,
+            row.estimated_microunits,
+            now,
+            now,
+            id,
+            now,
+          );
     const reservation = await this.db.batch([
-      this.db
-        .prepare(
-          `UPDATE ai_requests SET status='APPROVED',approved_by=?,approved_at=?,approval_hash=?,version=version+1,updated_at=?
-        WHERE id=? AND actor_id=? AND version=? AND status='AWAITING_UL_APPROVAL'`,
-        )
-        .bind(
-          principal.actorId,
-          now,
-          approvalHash,
-          now,
-          id,
-          principal.actorId,
-          version,
-        ),
-      this.db
-        .prepare(
-          `INSERT INTO ai_budget_ledger(id,month,request_id,unit_id,actor_id,operation,estimated_microunits,status,created_at,updated_at)
-        SELECT ?,?,?,?,?,?,?,'RESERVED',?,? FROM ai_requests WHERE id=? AND status='APPROVED' AND approved_at=?`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          month,
-          id,
-          row.unit_id,
-          principal.actorId,
-          row.operation,
-          row.estimated_microunits,
-          now,
-          now,
-          id,
-          now,
-        ),
+      requestReservation,
+      ledgerReservation,
       this.auditWhen(
-        "AI_REQUEST_APPROVED",
+        retryingApproved ? "AI_REQUEST_RETRY_RESERVED" : "AI_REQUEST_APPROVED",
         principal,
         id,
         requestId,
         now,
-        "EXISTS(SELECT 1 FROM ai_requests WHERE id=? AND actor_id=? AND status='APPROVED' AND approved_at=?)",
+        retryingApproved
+          ? "EXISTS(SELECT 1 FROM ai_requests WHERE id=? AND actor_id=? AND status='APPROVED' AND updated_at=?)"
+          : "EXISTS(SELECT 1 FROM ai_requests WHERE id=? AND actor_id=? AND status='APPROVED' AND approved_at=?)",
         [id, principal.actorId, now],
       ),
     ]);
-    if ((reservation[0]!.meta.changes ?? 0) !== 1)
+    if (
+      (reservation[0]!.meta.changes ?? 0) !== 1 ||
+      (reservation[1]!.meta.changes ?? 0) !== 1
+    )
       throw new MemberError("VERSION_CONFLICT", 409, "request_state_conflict");
 
     const refs = JSON.parse(row.input_refs_json) as InputRef[];
     try {
+      // Re-read immediately before provider invocation. The reservation query also
+      // checks these flags atomically so a switch flip cannot race budget reserve.
+      await this.assertAiOperational();
       const validated = validateFakeResponse(
         deterministicFakeResponse(row.operation, refs, text),
         refs,
@@ -706,8 +756,31 @@ export class AiSafetyRepository {
       ];
       await this.db.batch(statements);
       await this.bestEffortDelete(row.sanitized_context_cipher_ref);
-    } catch {
+    } catch (error) {
       const failedAt = new Date().toISOString();
+      if (error instanceof MemberError && error.code === "AI_UNAVAILABLE") {
+        await this.db.batch([
+          this.db
+            .prepare(
+              "UPDATE ai_requests SET error_code='AI_UNAVAILABLE',version=version+1,updated_at=? WHERE id=? AND status='APPROVED'",
+            )
+            .bind(failedAt, id),
+          this.db
+            .prepare(
+              "UPDATE ai_budget_ledger SET status='RELEASED',updated_at=? WHERE request_id=? AND status='RESERVED'",
+            )
+            .bind(failedAt, id),
+          this.audit(
+            "AI_REQUEST_EXECUTION_DEFERRED",
+            principal,
+            id,
+            requestId,
+            failedAt,
+            "ai_incident_switch_enabled",
+          ),
+        ]);
+        throw error;
+      }
       await this.db.batch([
         this.db
           .prepare(
