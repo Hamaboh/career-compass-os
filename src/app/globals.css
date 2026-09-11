@@ -10,6 +10,19 @@
 body {
   margin: 0;
 }
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 0;
+  z-index: 10;
+  padding: 0.75rem;
+  background: white;
+  color: #173f78;
+  transform: translateY(-120%);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
 header,
 main {
   max-width: 64rem;
@@ -20,6 +33,15 @@ header {
   background: #14213d;
   color: white;
   max-width: none;
+}
+header nav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin-left: 2rem;
+}
+header a {
+  color: white;
 }
 .panel {
   background: white;
@@ -88,4 +110,48 @@ textarea {
 dt {
   font-weight: 700;
   margin-top: 0.75rem;
+}
+@media (max-width: 40rem) {
+  header,
+  main {
+    padding: 1rem;
+  }
+  header nav {
+    display: flex;
+    margin: 0.75rem 0 0;
+  }
+  .panel {
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  input,
+  select,
+  textarea,
+  button,
+  .button {
+    max-width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media print {
+  header,
+  .skip-link,
+  button,
+  .button,
+  nav {
+    display: none !important;
+  }
+  body,
+  .panel {
+    background: white;
+    color: black;
+    border: 0;
+  }
 }
