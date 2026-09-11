@@ -102,10 +102,15 @@ export const restoreExerciseInput = z
     notes: z.string().trim().max(1000),
   })
   .strict()
-  .refine((value) => value.completedAt >= value.startedAt, {
-    path: ["completedAt"],
-    message: "完了日時は開始日時以降にしてください",
-  })
+  .refine(
+    (value) =>
+      new Date(value.completedAt).getTime() >=
+      new Date(value.startedAt).getTime(),
+    {
+      path: ["completedAt"],
+      message: "完了日時は開始日時以降にしてください",
+    },
+  )
   .refine((value) => Object.keys(value.restoredCounts).length <= 100, {
     path: ["restoredCounts"],
     message: "復元件数は100 table以内にしてください",

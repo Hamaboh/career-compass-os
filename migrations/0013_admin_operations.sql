@@ -141,9 +141,11 @@ END;
 CREATE TRIGGER retention_member_unlink_guard BEFORE UPDATE OF subject_id,preview_json,preview_hash ON retention_actions
 WHEN NOT (
   OLD.subject_type='MEMBER' AND OLD.action='ANONYMIZE' AND
-  OLD.status='EXECUTING' AND NEW.status='EXECUTED' AND
-  NEW.subject_id LIKE 'retired:%' AND
-  json_extract(NEW.preview_json,'$.anonymized')=1
+  ((OLD.status='EXECUTING' AND NEW.status='EXECUTED' AND
+    NEW.subject_id LIKE 'retired:%' AND
+    json_extract(NEW.preview_json,'$.anonymized')=1) OR
+   (OLD.status='APPROVED' AND NEW.status='CANDIDATE' AND
+    NEW.subject_id=OLD.subject_id AND NEW.approved_by IS NULL AND NEW.approved_at IS NULL))
 ) BEGIN
   SELECT RAISE(ABORT,'retention linkage is immutable outside member anonymization');
 END;

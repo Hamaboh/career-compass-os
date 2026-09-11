@@ -662,7 +662,7 @@ export class AdminRepository {
     if (!principal.globalUnitRead) {
       const marks = scopeUnitIds.map(() => "?").join(",") || "NULL";
       filters.push(`(
-        (a.target_type='member' AND EXISTS(SELECT 1 FROM members m JOIN member_unit_history h ON h.member_id=m.id WHERE m.id=a.target_id AND h.unit_id IN (${marks}) AND date(a.occurred_at)>=date(h.started_on) AND (h.ended_on IS NULL OR date(a.occurred_at)<=date(h.ended_on)))) OR
+        (a.target_type='member' AND EXISTS(SELECT 1 FROM members m JOIN member_unit_history h ON h.member_id=m.id WHERE m.id=a.target_id AND h.unit_id IN (${marks}) AND date(a.occurred_at)>=date(h.started_on) AND (h.ended_on IS NULL OR date(a.occurred_at)<date(h.ended_on)))) OR
         (a.target_type='goal' AND EXISTS(SELECT 1 FROM goals g WHERE g.id=a.target_id AND g.unit_id IN (${marks}))) OR
         (a.target_type='goal_version' AND EXISTS(SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE v.id=a.target_id AND g.unit_id IN (${marks}))) OR
         (a.target_type='progress_entry' AND EXISTS(SELECT 1 FROM progress_entries p WHERE p.id=a.target_id AND p.unit_id IN (${marks}))) OR
@@ -685,7 +685,7 @@ export class AdminRepository {
     } else if (query.unitId) {
       const unitId = query.unitId;
       filters.push(`(
-        (a.target_type='member' AND EXISTS(SELECT 1 FROM members m JOIN member_unit_history h ON h.member_id=m.id WHERE m.id=a.target_id AND h.unit_id=? AND date(a.occurred_at)>=date(h.started_on) AND (h.ended_on IS NULL OR date(a.occurred_at)<=date(h.ended_on)))) OR
+        (a.target_type='member' AND EXISTS(SELECT 1 FROM members m JOIN member_unit_history h ON h.member_id=m.id WHERE m.id=a.target_id AND h.unit_id=? AND date(a.occurred_at)>=date(h.started_on) AND (h.ended_on IS NULL OR date(a.occurred_at)<date(h.ended_on)))) OR
         (a.target_type='goal' AND EXISTS(SELECT 1 FROM goals g WHERE g.id=a.target_id AND g.unit_id=?)) OR
         (a.target_type='goal_version' AND EXISTS(SELECT 1 FROM goal_versions v JOIN goals g ON g.id=v.goal_id WHERE v.id=a.target_id AND g.unit_id=?)) OR
         (a.target_type='progress_entry' AND EXISTS(SELECT 1 FROM progress_entries p WHERE p.id=a.target_id AND p.unit_id=?)) OR
@@ -796,6 +796,28 @@ export class AdminRepository {
       ["goals", "SELECT COUNT(*) count FROM goals WHERE member_id=?"],
       ["oneOnOnes", "SELECT COUNT(*) count FROM one_on_ones WHERE member_id=?"],
       [
+        "oneOnOneEntries",
+        "SELECT COUNT(*) count FROM one_on_one_entries WHERE one_on_one_id IN (SELECT id FROM one_on_ones WHERE member_id=?)",
+      ],
+      [
+        "goalVersions",
+        "SELECT COUNT(*) count FROM goal_versions WHERE goal_id IN (SELECT id FROM goals WHERE member_id=?)",
+      ],
+      ["actions", "SELECT COUNT(*) count FROM action_items WHERE member_id=?"],
+      ["evidence", "SELECT COUNT(*) count FROM evidence WHERE member_id=?"],
+      [
+        "progressEntries",
+        "SELECT COUNT(*) count FROM progress_entries WHERE member_id=?",
+      ],
+      [
+        "reflections",
+        "SELECT COUNT(*) count FROM reflections WHERE member_id=?",
+      ],
+      [
+        "goalIndicators",
+        "SELECT COUNT(*) count FROM goal_indicators WHERE member_id=?",
+      ],
+      [
         "aiRequests",
         "SELECT COUNT(*) count FROM ai_requests WHERE member_id=?",
       ],
@@ -803,15 +825,29 @@ export class AdminRepository {
         "shareSnapshots",
         "SELECT COUNT(*) count FROM share_snapshots WHERE member_id=?",
       ],
+      [
+        "shareTokens",
+        "SELECT COUNT(*) count FROM share_tokens WHERE snapshot_id IN (SELECT id FROM share_snapshots WHERE member_id=?)",
+      ],
+      [
+        "reminderRules",
+        "SELECT COUNT(*) count FROM reminder_rules WHERE member_id=?",
+      ],
+      [
+        "notifications",
+        "SELECT COUNT(*) count FROM notifications WHERE member_id=?",
+      ],
     ] as const;
-    const counts: Record<string, number> = {};
-    for (const [name, sql] of queries) {
-      const row = await this.db
-        .prepare(sql)
-        .bind(memberId)
-        .first<{ count: number }>();
-      counts[name] = row?.count ?? 0;
-    }
+    const results = await this.db.batch(
+      queries.map(([, sql]) => this.db.prepare(sql).bind(memberId)),
+    );
+    const counts: Record<string, number> = Object.fromEntries(
+      queries.map(([name], index) => [
+        name,
+        (results[index]?.results[0] as { count?: number } | undefined)?.count ??
+          0,
+      ]),
+    );
     return {
       memberId,
       dataClasses: Object.keys(counts),
@@ -1209,6 +1245,48 @@ export class AdminRepository {
         409,
         "second_admin_required",
       );
+    if (action.subject_type === "MEMBER") {
+      const currentPreview = await this.memberRetentionPreview(
+        action.subject_id,
+      );
+      const currentPreviewJson = JSON.stringify(currentPreview);
+      const currentPreviewHash = await sha256(currentPreviewJson);
+      if (currentPreviewHash !== action.preview_hash) {
+        const changedAt = new Date().toISOString();
+        await this.db.batch([
+          this.db
+            .prepare(
+              `UPDATE retention_actions
+               SET status='CANDIDATE',preview_json=?,preview_hash=?,approved_by=NULL,approved_at=NULL,
+                   version=version+1,updated_at=?
+               WHERE id=? AND status='APPROVED' AND version=? AND preview_hash=?`,
+            )
+            .bind(
+              currentPreviewJson,
+              currentPreviewHash,
+              changedAt,
+              actionId,
+              input.version,
+              input.previewHash,
+            ),
+          this.audit(
+            "RETENTION_PREVIEW_CHANGED",
+            principal,
+            "retention_action",
+            actionId,
+            requestId,
+            changedAt,
+            {},
+            "changes()=1",
+          ),
+        ]);
+        throw new MemberError(
+          "VERSION_CONFLICT",
+          409,
+          "retention_preview_changed_reapproval_required",
+        );
+      }
+    }
     const backup = await this.db
       .prepare(
         "SELECT id FROM backup_exports WHERE status='READY' AND datetime(source_timestamp)>=datetime('now','-24 hours') ORDER BY source_timestamp DESC LIMIT 1",
@@ -1776,18 +1854,24 @@ export class AdminRepository {
   private async backupManifest(
     sourceTimestamp: string,
   ): Promise<BackupManifest> {
+    // D1 batch executes all statements as one transaction, yielding one
+    // point-in-time view without assuming an unsupported snapshot API.
+    const results = await this.db.batch([
+      ...BACKUP_TABLES.map((table) =>
+        this.db.prepare(`SELECT * FROM ${table}`),
+      ),
+      this.db.prepare(
+        "SELECT r2_object_key object_key FROM share_snapshots UNION SELECT sanitized_context_cipher_ref FROM ai_requests WHERE sanitized_context_cipher_ref<>''",
+      ),
+    ]);
     const counts: Record<string, number> = {};
     const tables: Record<string, Row[]> = {};
-    for (const table of BACKUP_TABLES) {
-      const rows = await this.db.prepare(`SELECT * FROM ${table}`).all<Row>();
-      tables[table] = rows.results;
-      counts[table] = rows.results.length;
-    }
-    const keys = await this.db
-      .prepare(
-        "SELECT r2_object_key object_key FROM share_snapshots UNION SELECT sanitized_context_cipher_ref FROM ai_requests WHERE sanitized_context_cipher_ref<>''",
-      )
-      .all<{ object_key: string }>();
+    BACKUP_TABLES.forEach((table, index) => {
+      const rows = (results[index]?.results ?? []) as Row[];
+      tables[table] = rows;
+      counts[table] = rows.length;
+    });
+    const keys = results.at(-1) as D1Result<{ object_key: string }>;
     return {
       format: "CAREER_COMPASS_RECOVERABLE_BACKUP_V2",
       schemaVersion: "0013",

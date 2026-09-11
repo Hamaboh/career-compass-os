@@ -6,6 +6,7 @@ import {
   auditExportInput,
   auditQueryInput,
   retentionApproveInput,
+  restoreExerciseInput,
   userAccessInput,
 } from "../src/lib/admin/schemas";
 import { AdminRepository } from "../src/lib/admin/repository";
@@ -214,8 +215,9 @@ describe("Implementation 9 admin boundaries", () => {
     expect(issued[0]).toContain("h.unit_id IN");
     expect(issued[0]).toContain("date(a.occurred_at)>=date(h.started_on)");
     expect(issued[0]).toContain(
-      "h.ended_on IS NULL OR date(a.occurred_at)<=date(h.ended_on)",
+      "h.ended_on IS NULL OR date(a.occurred_at)<date(h.ended_on)",
     );
+    expect(issued[0]).not.toContain("date(a.occurred_at)<=date(h.ended_on)");
     expect(issued[0]).toContain("p.unit_id IN");
     expect(issued[0]).toContain("v.confidentiality='NORMAL'");
     expect(issued[0]).toContain("record_access_grants");
@@ -270,13 +272,14 @@ describe("Implementation 9 admin boundaries", () => {
   it("builds a recoverable row artifact rather than a counts-only manifest", async () => {
     const backupDb = {
       prepare(sql: string) {
-        return {
-          async all() {
-            if (sql.startsWith("SELECT * FROM "))
-              return { results: [{ synthetic: sql.slice(14) }] };
-            return { results: [{ object_key: "fixture" }] };
-          },
-        };
+        return { sql };
+      },
+      async batch(statements: Array<{ sql: string }>) {
+        return statements.map(({ sql }) =>
+          sql.startsWith("SELECT * FROM ")
+            ? { results: [{ synthetic: sql.slice(14) }] }
+            : { results: [{ object_key: "fixture" }] },
+        );
       },
     } as unknown as D1Database;
     const repository = new AdminRepository(backupDb, files) as unknown as {
@@ -296,9 +299,109 @@ describe("Implementation 9 admin boundaries", () => {
     expect(artifact.tables.share_access_windows).toHaveLength(1);
   });
 
+  it("collects every backup table in one transactional D1 batch", async () => {
+    let batches = 0;
+    const snapshotDb = {
+      prepare(sql: string) {
+        return { sql };
+      },
+      async batch(statements: Array<{ sql: string }>) {
+        batches += 1;
+        expect(statements.length).toBeGreaterThan(2);
+        return statements.map(() => ({ results: [] }));
+      },
+    } as unknown as D1Database;
+    await (
+      new AdminRepository(snapshotDb, files) as unknown as {
+        backupManifest(value: string): Promise<unknown>;
+      }
+    ).backupManifest("2026-09-01T00:00:00.000Z");
+    expect(batches).toBe(1);
+  });
+
+  it("returns an approved member action to reapproval when its preview changed", async () => {
+    let deletes = 0;
+    let batches = 0;
+    const retentionDb = {
+      prepare(sql: string) {
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          async first() {
+            if (sql.includes("FROM retention_actions WHERE id="))
+              return {
+                id: "action-a",
+                subject_type: "MEMBER",
+                subject_id: "member-a",
+                status: "APPROVED",
+                preview_hash: "0".repeat(64),
+                approved_by: "admin-b",
+                version: 2,
+              };
+            return null;
+          },
+        };
+      },
+      async batch(statements: Array<{ sql?: string }>) {
+        batches += 1;
+        if (batches === 1)
+          return statements.map(() => ({
+            results: [{ count: 1 }],
+            meta: { changes: 0 },
+          }));
+        expect(statements[0]?.sql).toContain("status='CANDIDATE'");
+        return statements.map(() => ({ results: [], meta: { changes: 1 } }));
+      },
+    } as unknown as D1Database;
+    const guardedFiles = {
+      delete: async () => {
+        deletes += 1;
+      },
+    } as unknown as R2Bucket;
+    await expect(
+      new AdminRepository(retentionDb, guardedFiles).executeRetention(
+        admin,
+        "action-a",
+        { version: 2, previewHash: "0".repeat(64) },
+        "request-a",
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      reason: "retention_preview_changed_reapproval_required",
+    });
+    expect(deletes).toBe(0);
+  });
+
+  it("orders restore timestamps chronologically across offsets", () => {
+    const base = {
+      environment: "LOCAL" as const,
+      restoredArtifactChecksum: "a".repeat(64),
+      restoredCounts: { members: 0 },
+      authorizationSmokeVerified: true,
+      notes: "synthetic",
+    };
+    expect(() =>
+      restoreExerciseInput.parse({
+        ...base,
+        startedAt: "2026-09-11T10:00:00+09:00",
+        completedAt: "2026-09-11T02:00:00Z",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      restoreExerciseInput.parse({
+        ...base,
+        startedAt: "2026-09-11T02:00:00Z",
+        completedAt: "2026-09-11T10:00:00+09:00",
+      }),
+    ).toThrow(/完了日時/);
+  });
+
   it("reclaims a FAILED backup with the same idempotency key and object key", async () => {
     const writes: string[] = [];
     const issued: string[] = [];
+    const sourceTimestamp = new Date().toISOString();
     const retryDb = {
       prepare(sql: string) {
         issued.push(sql);
@@ -313,7 +416,7 @@ describe("Implementation 9 admin boundaries", () => {
                 environment: "PREVIEW",
                 status: "FAILED",
                 object_key: "backups/preview/existing.json",
-                source_timestamp: "2026-09-10T00:00:00.000Z",
+                source_timestamp: sourceTimestamp,
               };
             return null;
           },
@@ -326,7 +429,7 @@ describe("Implementation 9 admin boundaries", () => {
         };
       },
       async batch(statements: unknown[]) {
-        return statements.map(() => ({ meta: { changes: 1 } }));
+        return statements.map(() => ({ results: [], meta: { changes: 1 } }));
       },
     } as unknown as D1Database;
     const retryFiles = {
@@ -338,7 +441,7 @@ describe("Implementation 9 admin boundaries", () => {
       admin,
       {
         environment: "PREVIEW",
-        sourceTimestamp: "2026-09-10T00:00:00.000Z",
+        sourceTimestamp,
         idempotencyKey: "daily-preview",
       },
       "request-retry",
