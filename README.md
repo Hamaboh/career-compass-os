@@ -4,7 +4,7 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜10のlocal/CI synthetic acceptanceを実装済みです。継続支援、deterministic AI safety pipeline、本人向けHTML共有、全Unitレビュー、制度version固定link、参考計算、管理・監査・保持・復旧演習まで利用できます。実AI、Gmail、実data pilot、production接続は未実装です。I10の合否とproduction-only残作業は[`docs/implementation-10-acceptance.md`](docs/implementation-10-acceptance.md)に記録しています。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜9を実装済みです。Implementation 10に向けたlocal/CI synthetic acceptance preparationは完了していますが、正式entry gateのproduction prerequisiteが未完了のためImplementation 10本体は`NOT READY`であり、完了・合格扱いではありません。継続支援、deterministic AI safety pipeline、本人向けHTML共有、全Unitレビュー、制度version固定link、参考計算、管理・監査・保持・復旧演習まで利用できます。実AI、Gmail、実data pilot、production接続は未実装です。準備結果とproduction-only残作業は[`docs/implementation-10-acceptance.md`](docs/implementation-10-acceptance.md)に記録しています。
 
 ## 開発・検証
 

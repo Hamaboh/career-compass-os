@@ -50,8 +50,9 @@ header a {
   padding: 1.5rem;
 }
 :focus-visible {
-  outline: 3px solid #ffb000;
+  outline: 3px solid #fff;
   outline-offset: 3px;
+  box-shadow: 0 0 0 6px #111827;
 }
 label {
   display: block;

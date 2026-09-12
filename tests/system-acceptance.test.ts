@@ -34,6 +34,27 @@ function principal(role: Role, units: string[] = []): Principal {
   };
 }
 
+function relativeLuminance(hex: string): number {
+  const expanded =
+    hex.length === 4
+      ? [...hex.slice(1)].map((value) => value.repeat(2)).join("")
+      : hex.slice(1);
+  const channels = expanded.match(/.{2}/g)!.map((value) => {
+    const channel = Number.parseInt(value, 16) / 255;
+    return channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
+}
+
+function contrast(first: string, second: string): number {
+  const values = [relativeLuminance(first), relativeLuminance(second)].sort(
+    (a, b) => b - a,
+  );
+  return (values[0]! + 0.05) / (values[1]! + 0.05);
+}
+
 describe("Implementation 10 system acceptance", () => {
   it("enforces the all-actor acceptance matrix, including non-login Member and excluded users", async () => {
     const audit = new Audit();
@@ -149,4 +170,22 @@ describe("Implementation 10 system acceptance", () => {
     expect(css).toContain("prefers-reduced-motion");
     expect(css).toContain("@media print");
   });
+
+  it("keeps a 3:1 focus indicator against both light and dark adjacent colors", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const focusRule = css.match(/:focus-visible\s*\{([^}]+)\}/)?.[1] ?? "";
+    expect(focusRule).toContain("outline: 3px solid #fff");
+    expect(focusRule).toContain("box-shadow: 0 0 0 6px #111827");
+    expect(contrast("#111827", "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(contrast("#ffffff", "#14213d")).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(["loading.tsx", "error.tsx", "not-found.tsx"])(
+    "keeps exactly one skip-link target in the %s fallback",
+    (file) => {
+      const source = readFileSync(`src/app/${file}`, "utf8");
+      expect(source).toContain('<main id="main-content"');
+      expect(source.match(/id="main-content"/g)).toHaveLength(1);
+    },
+  );
 });

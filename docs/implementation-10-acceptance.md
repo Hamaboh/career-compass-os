@@ -1,21 +1,23 @@
-# Implementation 10: System acceptance evidence
+# Implementation 10: Local/CI synthetic acceptance preparation evidence
 
 ## 判定
 
 | 項目 | 判定 |
 |---|---|
 | 基準 | `495a1e3c066daf2b7b0bf8cf5531c10afa8ab97d`（Implementation 9 merge） |
-| I10 local/CI synthetic acceptance | `PASS` |
+| I10 local/CI synthetic acceptance preparation | `COMPLETE` |
+| Implementation 10 entry gate | `NOT READY` |
+| Implementation 10 overall | `NOT STARTED / NOT READY` |
 | Limited real-data pilot | `NOT RUN / production-only` |
 | Production release | `NOT READY` |
 
-本書はDesign Freezeを変更しない受入証跡である。正式authorityは
+本書はDesign Freezeを変更せず、Implementation 10のentry gateが開いた後に行うsystem acceptanceへ向けた準備証跡である。local/CI commandの成功をImplementation 10本体の完了・合格とは扱わない。正式authorityは
 `phase-5/53-design-freeze.md`であり、旧`00-design-freeze.md`は履歴資料である。
 依頼にあった`docs/DESIGN_FREEZE.md`は基準commitに存在しないため、正式文書を直接確認した。
 
 ## 変更前gapと解消
 
-| I10受入項目 | 変更前gap | 証跡/対応 | 結果 |
+| I10準備項目 | 変更前gap | 証跡/対応 | local/CI結果 |
 |---|---|---|---|
 | 全role/actor UAT | slice別testはあったが、12 login userと非login actorをまとめたfixtureがない | `test-system-acceptance.py`（7 UL、3 EXECUTIVE、2 SYSTEM_ADMIN、MEMBER、EXCLUDED） | PASS |
 | 認証・legacy auth | Access JWT testはあるがI10で対象外経路を明示していない | auth suite + invite/OTP/password/Member login route不在test | PASS/N/A |
@@ -29,10 +31,10 @@
 
 招待、OTP、アプリパスワード、password reset、Member accountは
 `P0-AUTHN-004`およびMVP対象外により「実装してE2E」ではなく「経路が存在しないこと」を受入とする。
-実在Memberを使う限定pilotはsynthetic-only制約とproduction gateのため未実施であり、I10の
-local/CI完了とproduction readinessを混同しない。
+実在Memberを使う限定pilotはsynthetic-only制約とproduction gateのため未実施である。正式readiness gateが
+`NOT READY`である間は、local/CI preparationが成功してもImplementation 10本体を開始・完了・合格扱いにしない。
 
-## 自動受入matrix
+## 自動準備検査matrix
 
 - **SYSTEM_ADMIN**: 運用capability、理由必須maintenance bypass、二者retention、backup/restoreを確認。
 - **EXECUTIVE**: 全Unit通常read/reviewを許可し、Member元data editとACLなし機密readを拒否。
@@ -64,7 +66,7 @@ RPO 24時間/RTO 1営業日を満たすが、production D1 Time Travel/R2/bindin
 
 ## Accessibility・responsive
 
-自動検査は日本語lang、main/heading、form label、table caption、live status、44 px target、focus-visible、
+自動検査は日本語lang、main/heading、form label、table caption、live status、44 px target、白と暗色の二重focus境界、
 skip link、semantic navigation、40 rem reflow、reduced motion、printを対象とした。keyboard-only、focus順、
 200% zoom、screen reader、high contrast、Chrome/Edge/Safari相当、本人向けHTMLの実機print/DLは、
 preview URLで次のmanual checklistを実施して署名するまでproduction完了にしない。
@@ -79,11 +81,12 @@ preview URLで次のmanual checklistを実施して署名するまでproduction�
 6. 合成UATをProduct ownerが承認後、同意を得た限定pilotを本番管理手順下で実施。
 7. 異なる2名のSYSTEM_ADMINとincident責任者がproduction restore/binding切替を演習。
 
-以上が完了するまでproduction releaseは`NOT READY`であり、外部AI、本番data、Production Secretを投入しない。
+以上が完了して正式entry gateが開くまでImplementation 10は`NOT READY`であり、production releaseも`NOT READY`である。外部AI、本番data、Production Secretを投入しない。
 
 ## P0/P1/P2 self-review
 
-- **P0**: E2E-01〜15、MVP DoD、production gateを照合。legacy authを誤実装せず、pilot未実施を明示した。
+- **P0**: E2E-01〜15、MVP DoD、production gateを再照合。legacy authを誤実装せず、entry gate未達とpilot未実施を明示し、I10完了表現を除去した。
 - **P1**: role/Unit/ACL/IDOR、AI人間境界、Secret/PII、share、retention、restoreを照合。重大未解決事項なし。
-- **P2**: responsive/a11y gapを修正し、capacity threshold、単一acceptance command、training/restore手順を追加。
-  実機a11y、production latency、外部設定は上記gateへ残し、合格と誤記していない。
+- **P2**: focus contrastと全fallbackのskip targetを修正し、全TypeScript/integration境界を含む重複のないacceptance commandへ更新した。実機a11y、production latency、外部設定は上記gateへ残し、合格と誤記していない。
+
+PR #32のreview指摘に対する未解決事項は0件。production-only残作業は不具合ではなく、正式gateを開くための未充足prerequisiteとして上記一覧で追跡する。

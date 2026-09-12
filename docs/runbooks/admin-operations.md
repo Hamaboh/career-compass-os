@@ -43,6 +43,6 @@ Applicationは直前のreview済みversionへ戻す。migrationは編集・巻�
 
 ## I10 training・UAT checklist
 
-trainingとUATには合成dataだけを使い、`pnpm test:acceptance`を事前に完了する。ULは自UnitのMember登録、4つの目標入口、本人確認、1on1、AI停止時の手動継続、共有失効を実施する。EXECUTIVEは全Unit通常read、review、元data編集拒否、機密拒否を確認する。SYSTEM_ADMINはuser scope、監査、AI/share/mail/maintenance switch、retention二者確認、backup再試行とrestoreを確認する。Member役はaccountを使用せずshareのview/download/printだけを確認し、EXCLUDED役はapplication dataを一切閲覧できないことを確認する。
+entry gateが開いた後のtrainingとUATには合成dataだけを使い、全TypeScript test、system fixture、migration/integration境界をchainする`pnpm test:acceptance`を事前に完了する。ULは自UnitのMember登録、4つの目標入口、本人確認、1on1、AI停止時の手動継続、共有失効を実施する。EXECUTIVEは全Unit通常read、review、元data編集拒否、機密拒否を確認する。SYSTEM_ADMINはuser scope、監査、AI/share/mail/maintenance switch、retention二者確認、backup再試行とrestoreを確認する。Member役はaccountを使用せずshareのview/download/printだけを確認し、EXCLUDED役はapplication dataを一切閲覧できないことを確認する。entry gateが開く前の同command成功はpreparation evidenceであり、Implementation 10本体の完了を意味しない。
 
 keyboard-only、focus順、200% zoom、screen reader、狭いviewport、high contrast、reduced motion、printを記録し、実施者、日時、環境、結果、一般化したissue IDを残す。本文、raw token、Secret、実在個人情報を証跡へ含めない。失敗時はpilotへ進まず、修正と全受入再実行を行う。production-only項目と責任者は`docs/implementation-10-acceptance.md`を参照する。
