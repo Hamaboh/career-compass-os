@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic I10 capacity, actor-boundary, and data-integrity acceptance test."""
+"""Pre-I10 synthetic capacity, actor-boundary, and integrity preparation."""
 
 import glob
 import sqlite3
@@ -92,6 +92,6 @@ database_bytes = page_count * page_size
 assert database_bytes < 10 * 1024 * 1024
 
 print(
-    "system acceptance: actors=14 (12 login + MEMBER + EXCLUDED), "
+    "synthetic acceptance preparation: actors=14 (12 login + MEMBER + EXCLUDED), "
     f"members=120, list_query_avg_ms={average_ms:.3f}, sqlite_bytes={database_bytes}, foreign_key_errors=0"
 )

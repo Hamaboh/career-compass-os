@@ -55,7 +55,7 @@ function contrast(first: string, second: string): number {
   return (values[0]! + 0.05) / (values[1]! + 0.05);
 }
 
-describe("Implementation 10 system acceptance", () => {
+describe("pre-I10 synthetic acceptance preparation", () => {
   it("enforces the all-actor acceptance matrix, including non-login Member and excluded users", async () => {
     const audit = new Audit();
     const unitA = "unit-a";
@@ -188,4 +188,23 @@ describe("Implementation 10 system acceptance", () => {
       expect(source.match(/id="main-content"/g)).toHaveLength(1);
     },
   );
+
+  it("keeps the canonical I10 gate and public status explicitly NOT READY", () => {
+    const readiness = readFileSync(
+      "docs/phase-5/52-readiness-gates-manual-setup.md",
+      "utf8",
+    );
+    const readme = readFileSync("README.md", "utf8");
+    const evidence = readFileSync(
+      "docs/implementation-10-acceptance.md",
+      "utf8",
+    );
+    expect(readiness).toMatch(/\| I10 Acceptance\/Pilot \| NOT READY \|/);
+    expect(readme).toContain("Implementation 0〜9を実装済み");
+    expect(readme).toContain("Implementation 10本体は`NOT READY`");
+    expect(readme).not.toContain("Implementation 0〜10を実装済み");
+    expect(evidence).toContain(
+      "| Implementation 10 overall | `NOT STARTED / NOT READY` |",
+    );
+  });
 });
