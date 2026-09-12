@@ -12,20 +12,16 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body>
+        <a className="skip-link" href="#main-content">
+          本文へ移動
+        </a>
         <header>
-          <strong>Career Compass OS</strong>{" "}
-          <Link href="/members" style={{ color: "white", marginLeft: "2rem" }}>
-            Member
-          </Link>{" "}
-          <Link
-            href="/executive"
-            style={{ color: "white", marginLeft: "2rem" }}
-          >
-            全Unitレビュー
-          </Link>{" "}
-          <Link href="/admin" style={{ color: "white", marginLeft: "2rem" }}>
-            管理・運用
-          </Link>
+          <strong>Career Compass OS</strong>
+          <nav aria-label="主要ナビゲーション">
+            <Link href="/members">Member</Link>
+            <Link href="/executive">全Unitレビュー</Link>
+            <Link href="/admin">管理・運用</Link>
+          </nav>
         </header>
         {children}
       </body>

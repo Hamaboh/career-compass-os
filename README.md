@@ -4,13 +4,13 @@ SES企業で分散常駐するメンバーについて、Unit Leaderが本人の
 
 ## 現在の状態
 
-現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜9を実装済みです。継続支援、deterministic AI safety pipeline、本人向けHTML共有、全Unitレビュー、制度version固定link、参考計算、管理・監査・保持・復旧演習まで利用できます。実AI、Gmail、production接続は未実装です。
+現在は**要件再定義後の設計完了（Phase 0〜5完了・Design Freeze済み）**で、Implementation 0〜9を実装済みです。Implementation 10に向けたlocal/CI synthetic acceptance preparationは完了していますが、正式entry gateのproduction prerequisiteが未完了のためImplementation 10本体は`NOT READY`であり、完了・合格扱いではありません。継続支援、deterministic AI safety pipeline、本人向けHTML共有、全Unitレビュー、制度version固定link、参考計算、管理・監査・保持・復旧演習まで利用できます。実AI、Gmail、実data pilot、production接続は未実装です。準備結果とproduction-only残作業は[`docs/implementation-10-acceptance.md`](docs/implementation-10-acceptance.md)に記録しています。
 
 ## 開発・検証
 
 Node.js `22.22.0`とpnpm `10.28.1`を使用します。`corepack enable`後、`pnpm install --frozen-lockfile`で導入し、`pnpm dev`で起動します。`.env.example`は非Secretの説明だけを持ち、実値はCloudflare/GitHubのSecret storeで管理します。本番dataをlocal/CI/previewへコピーしてはいけません。
 
-`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm build:cloudflare`、`pnpm audit --audit-level=high`が標準検証です。`pnpm preview:smoke`はlocal Workersでhealth、request ID、security headerを検証します。local D1/R2 stateとbuild/cacheはGit管理しません。
+`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm test:integration`、`pnpm test:acceptance`、`pnpm build`、`pnpm build:cloudflare`、`pnpm audit --audit-level=high`が標準検証です。`pnpm preview:smoke`はlocal Workersでhealth、request ID、security headerを検証します。local D1/R2 stateとbuild/cacheはGit管理しません。
 
 PRではclean install、上記検証、secret scanを必須とします。previewはpreview専用bindingだけを使います。Production resource作成・deploymentはI0対象外です。rollbackはbindingを確認して直前のreview済みWorkers versionへ`wrangler rollback`するか、直前のreview済みcommitを再deployします。I0にmigrationはありません。詳細は[ADR-0008](docs/decisions/0008-implementation-0-runtime-versions.md)を参照してください。
 

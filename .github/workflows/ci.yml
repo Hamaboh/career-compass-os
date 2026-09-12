@@ -16,8 +16,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm test:migration:all
+      - run: pnpm test:acceptance
       - run: pnpm build
       - run: pnpm build:cloudflare
       - run: pnpm preview:smoke
